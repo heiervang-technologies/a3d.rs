@@ -31,11 +31,18 @@ impl Mesh {
         }
 
         let center = (min + max) * 0.5;
-        let extent = (max - min).max_element();
-        let scale = if extent > 0.0 { 2.0 / extent } else { 1.0 };
 
+        // Center at origin, then find max distance (unit sphere, not unit box)
+        let mut max_dist: f32 = 0.0;
         for v in &mut self.vertices {
-            let p = (Vec3::from(v.position) - center) * scale;
+            let p = Vec3::from(v.position) - center;
+            v.position = p.into();
+            max_dist = max_dist.max(p.length());
+        }
+
+        let scale = if max_dist > 0.0 { 1.0 / max_dist } else { 1.0 };
+        for v in &mut self.vertices {
+            let p = Vec3::from(v.position) * scale;
             v.position = p.into();
         }
     }

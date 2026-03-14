@@ -7,6 +7,7 @@ pub struct Framebuffer {
     pub depth: Vec<f32>,
     pub chars: Vec<char>,
     pub colors: Vec<[f32; 3]>,
+    pub luminances: Vec<f32>,
 }
 
 impl Framebuffer {
@@ -18,6 +19,7 @@ impl Framebuffer {
             depth: vec![f32::INFINITY; size],
             chars: vec![' '; size],
             colors: vec![[0.0; 3]; size],
+            luminances: vec![0.0; size],
         }
     }
 
@@ -25,6 +27,7 @@ impl Framebuffer {
         self.depth.fill(f32::INFINITY);
         self.chars.fill(' ');
         self.colors.iter_mut().for_each(|c| *c = [0.0; 3]);
+        self.luminances.fill(0.0);
     }
 
     pub fn set_pixel(&mut self, x: usize, y: usize, z: f32, luminance: f32, color: [f32; 3]) {
@@ -36,6 +39,7 @@ impl Framebuffer {
             self.depth[idx] = z;
             self.chars[idx] = luminance_to_char(luminance);
             self.colors[idx] = color;
+            self.luminances[idx] = luminance;
         }
     }
 
@@ -46,6 +50,7 @@ impl Framebuffer {
         self.depth.resize(size, f32::INFINITY);
         self.chars.resize(size, ' ');
         self.colors.resize(size, [0.0; 3]);
+        self.luminances.resize(size, 0.0);
         self.clear();
     }
 }

@@ -54,6 +54,9 @@ a3d model.obj
 # Interactive mode
 a3d model.obj --interactive
 
+# With ANSI true color
+a3d model.obj --color
+
 # Custom FPS and zoom
 a3d model.obj --fps 60 --zoom 2.5
 ```
@@ -65,7 +68,8 @@ a3d model.obj --fps 60 --zoom 2.5
 | `<MODEL>` | | (required) | Path to OBJ or STL file |
 | `--fps` | `-f` | 30 | Target frames per second |
 | `--interactive` | `-i` | off | Manual rotation with arrow keys |
-| `--zoom` | `-z` | 3.0 | Initial camera distance |
+| `--zoom` | `-z` | 1.0 | Initial zoom level |
+| `--color` | `-c` | off | Enable ANSI 24-bit true color output |
 
 ### Controls (interactive mode)
 
@@ -74,6 +78,7 @@ a3d model.obj --fps 60 --zoom 2.5
 | Arrow keys | Rotate model |
 | `+` / `=` | Zoom in |
 | `-` | Zoom out |
+| `c` | Toggle color on/off |
 | `q` / `Esc` | Quit |
 
 ### Debug logging
