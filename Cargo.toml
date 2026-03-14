@@ -1,0 +1,19 @@
+[package]
+name = "a3d"
+version = "0.1.0"
+edition = "2024"
+description = "GPU-accelerated ASCII 3D rendering engine"
+license = "MIT"
+
+[dependencies]
+wgpu = "24"
+glam = "0.29"
+ratatui = "0.29"
+crossterm = "0.28"
+tobj = { version = "4", features = ["async"] }
+clap = { version = "4", features = ["derive"] }
+pollster = "0.4"
+bytemuck = { version = "1", features = ["derive"] }
+log = "0.4"
+env_logger = "0.11"
+stl_io = "0.8"
