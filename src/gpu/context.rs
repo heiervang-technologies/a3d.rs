@@ -1,6 +1,7 @@
 use wgpu::{Adapter, Device, Instance, Queue};
 
 /// Holds the wgpu device, queue, and adapter.
+#[allow(dead_code)]
 pub struct GpuContext {
     pub device: Device,
     pub queue: Queue,

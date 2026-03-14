@@ -1,5 +1,6 @@
 use glam::{Mat4, Vec3};
 
+#[allow(dead_code)]
 pub struct Camera {
     pub azimuth: f32,
     pub altitude: f32,
@@ -16,6 +17,7 @@ impl Default for Camera {
     }
 }
 
+#[allow(dead_code)]
 impl Camera {
     pub fn view_matrix(&self) -> Mat4 {
         let eye = Vec3::new(
