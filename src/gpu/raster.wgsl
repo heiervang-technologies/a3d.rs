@@ -20,14 +20,11 @@ struct Uniforms {
     _pad1: f32,
 }
 
-struct Vertex {
-    position: vec3<f32>,
-    normal: vec3<f32>,
-    color: vec3<f32>,
-}
+// Vertex data as flat f32 array (stride 9: 3 position + 3 normal + 3 color)
+// WGSL vec3 has 16-byte alignment, but Rust Vertex is packed at 12 bytes per field.
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
-@group(0) @binding(1) var<storage, read> vertices: array<Vertex>;
+@group(0) @binding(1) var<storage, read> vertex_data: array<f32>;
 @group(0) @binding(2) var<storage, read> indices: array<u32>;
 @group(0) @binding(3) var<storage, read_write> transformed: array<vec4<f32>>;
 @group(0) @binding(4) var<storage, read_write> depth_buf: array<atomic<u32>>;
@@ -39,6 +36,22 @@ const DEPTH_SCALE: f32 = 4294967040.0;
 const ASCII_RAMP: array<u32, 12> = array<u32, 12>(
     46u, 44u, 39u, 58u, 59u, 33u, 43u, 42u, 61u, 35u, 36u, 64u
 ); // ".,':;!+*=#$@"
+
+const VERTEX_STRIDE: u32 = 9u; // 3 pos + 3 normal + 3 color
+
+fn vertex_position(idx: u32) -> vec3<f32> {
+    let base = idx * VERTEX_STRIDE;
+    return vec3<f32>(vertex_data[base], vertex_data[base + 1u], vertex_data[base + 2u]);
+}
+
+fn vertex_color(idx: u32) -> vec3<f32> {
+    let base = idx * VERTEX_STRIDE + 6u;
+    return vec3<f32>(vertex_data[base], vertex_data[base + 1u], vertex_data[base + 2u]);
+}
+
+fn vertex_count() -> u32 {
+    return arrayLength(&vertex_data) / VERTEX_STRIDE;
+}
 
 fn pack_depth(depth: f32) -> u32 {
     return u32(clamp(depth, 0.0, 1.0) * DEPTH_SCALE);
@@ -78,11 +91,11 @@ fn project(v: vec3<f32>) -> vec3<f32> {
 @compute @workgroup_size(256)
 fn vertex_transform(@builtin(global_invocation_id) gid: vec3<u32>) {
     let idx = gid.x;
-    if (idx >= arrayLength(&vertices)) {
+    if (idx >= vertex_count()) {
         return;
     }
 
-    let pos = vertices[idx].position;
+    let pos = vertex_position(idx);
     let rotated = rotate_x(rotate_y(pos));
     let projected = project(rotated);
     transformed[idx] = vec4<f32>(projected, 0.0);
@@ -200,10 +213,9 @@ fn rasterize_shade(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
 
     // Compute lighting from rotated vertices
-    let v0 = vertices[i0];
-    let r0 = rotate_x(rotate_y(v0.position));
-    let r1 = rotate_x(rotate_y(vertices[i1].position));
-    let r2 = rotate_x(rotate_y(vertices[i2].position));
+    let r0 = rotate_x(rotate_y(vertex_position(i0)));
+    let r1 = rotate_x(rotate_y(vertex_position(i1)));
+    let r2 = rotate_x(rotate_y(vertex_position(i2)));
 
     let normal_vec = cross(r1 - r0, r2 - r0);
     let normal_len = length(normal_vec);
@@ -213,7 +225,7 @@ fn rasterize_shade(@builtin(global_invocation_id) gid: vec3<u32>) {
     let normal = normal_vec / normal_len;
     let luminance = dot(-normal, u.light_dir) * 0.5 + 0.5;
 
-    var tri_color = v0.color;
+    var tri_color = vertex_color(i0);
     if (u.has_fg_override != 0u) {
         tri_color = u.fg_override;
     }
