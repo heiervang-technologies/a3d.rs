@@ -2,12 +2,19 @@ use std::io::{self, Stdout, Write};
 
 use crossterm::{
     cursor,
-    event::{self, Event, KeyCode, KeyEvent},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, MouseEvent, MouseEventKind},
     terminal,
     ExecutableCommand,
 };
 
 use crate::render::Framebuffer;
+
+/// Input events that the render loop cares about.
+pub enum InputEvent {
+    Key(KeyCode),
+    ScrollUp,
+    ScrollDown,
+}
 
 pub struct TerminalDisplay {
     stdout: Stdout,
@@ -19,6 +26,7 @@ impl TerminalDisplay {
         terminal::enable_raw_mode()?;
         stdout.execute(terminal::EnterAlternateScreen)?;
         stdout.execute(cursor::Hide)?;
+        stdout.execute(EnableMouseCapture)?;
         Ok(Self { stdout })
     }
 
@@ -102,10 +110,16 @@ impl TerminalDisplay {
         self.stdout.flush()
     }
 
-    pub fn poll_event(&self) -> Option<KeyCode> {
+    pub fn poll_event(&self) -> Option<InputEvent> {
         if event::poll(std::time::Duration::from_millis(0)).unwrap_or(false) {
-            if let Ok(Event::Key(KeyEvent { code, .. })) = event::read() {
-                return Some(code);
+            match event::read() {
+                Ok(Event::Key(KeyEvent { code, .. })) => return Some(InputEvent::Key(code)),
+                Ok(Event::Mouse(MouseEvent { kind, .. })) => match kind {
+                    MouseEventKind::ScrollUp => return Some(InputEvent::ScrollUp),
+                    MouseEventKind::ScrollDown => return Some(InputEvent::ScrollDown),
+                    _ => {}
+                },
+                _ => {}
             }
         }
         None
@@ -114,6 +128,7 @@ impl TerminalDisplay {
 
 impl Drop for TerminalDisplay {
     fn drop(&mut self) {
+        let _ = self.stdout.execute(DisableMouseCapture);
         let _ = self.stdout.execute(cursor::Show);
         let _ = self.stdout.execute(terminal::LeaveAlternateScreen);
         let _ = terminal::disable_raw_mode();

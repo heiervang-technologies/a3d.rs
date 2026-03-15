@@ -8,7 +8,7 @@ use glam::Vec3;
 use a3d::gpu::GpuContext;
 use a3d::model::load_model;
 use a3d::render::Framebuffer;
-use a3d::terminal::TerminalDisplay;
+use a3d::terminal::{InputEvent, TerminalDisplay};
 use a3d::{render_frame, AZ_SPEED, AL_SPEED};
 
 #[derive(Parser)]
@@ -93,16 +93,18 @@ fn main() {
         let t = start.elapsed().as_secs_f32();
 
         // Handle input
-        if let Some(key) = display.poll_event() {
-            match key {
-                KeyCode::Char('q') | KeyCode::Esc => break,
-                KeyCode::Up => altitude += 0.1,
-                KeyCode::Down => altitude -= 0.1,
-                KeyCode::Left => azimuth += 0.1,
-                KeyCode::Right => azimuth -= 0.1,
-                KeyCode::Char('+') | KeyCode::Char('=') => zoom = (zoom * 1.1).min(10.0),
-                KeyCode::Char('-') => zoom = (zoom * 0.9).max(0.1),
-                KeyCode::Char('c') => color = !color,
+        if let Some(ev) = display.poll_event() {
+            match ev {
+                InputEvent::Key(KeyCode::Char('q') | KeyCode::Esc) => break,
+                InputEvent::Key(KeyCode::Up | KeyCode::Char('k')) => altitude += 0.1,
+                InputEvent::Key(KeyCode::Down | KeyCode::Char('j')) => altitude -= 0.1,
+                InputEvent::Key(KeyCode::Left | KeyCode::Char('h')) => azimuth += 0.1,
+                InputEvent::Key(KeyCode::Right | KeyCode::Char('l')) => azimuth -= 0.1,
+                InputEvent::Key(KeyCode::Char('+') | KeyCode::Char('=')) => zoom = (zoom * 1.1).min(10.0),
+                InputEvent::Key(KeyCode::Char('-')) => zoom = (zoom * 0.9).max(0.1),
+                InputEvent::ScrollUp => zoom = (zoom * 1.1).min(10.0),
+                InputEvent::ScrollDown => zoom = (zoom * 0.9).max(0.1),
+                InputEvent::Key(KeyCode::Char('c')) => color = !color,
                 _ => {}
             }
         }

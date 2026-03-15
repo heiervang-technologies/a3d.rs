@@ -1,3 +1,3 @@
 mod display;
 
-pub use display::TerminalDisplay;
+pub use display::{InputEvent, TerminalDisplay};
