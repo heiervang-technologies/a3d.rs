@@ -1,7 +1,6 @@
 use wgpu::{Adapter, Device, Instance, Queue};
 
 /// Holds the wgpu device, queue, and adapter.
-#[allow(dead_code)]
 pub struct GpuContext {
     pub device: Device,
     pub queue: Queue,
@@ -9,7 +8,7 @@ pub struct GpuContext {
 }
 
 impl GpuContext {
-    pub async fn new() -> Self {
+    pub async fn new() -> Option<Self> {
         let instance = Instance::default();
 
         let adapter = instance
@@ -18,8 +17,7 @@ impl GpuContext {
                 force_fallback_adapter: false,
                 compatible_surface: None,
             })
-            .await
-            .expect("Failed to find a suitable GPU adapter");
+            .await?;
 
         let (device, queue) = adapter
             .request_device(
@@ -32,14 +30,14 @@ impl GpuContext {
                 None,
             )
             .await
-            .expect("Failed to create GPU device");
+            .ok()?;
 
         log::info!("GPU: {}", adapter.get_info().name);
 
-        Self {
+        Some(Self {
             device,
             queue,
             adapter,
-        }
+        })
     }
 }

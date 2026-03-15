@@ -4,6 +4,7 @@ pub mod render;
 pub mod terminal;
 
 use glam::Vec3;
+use gpu::{GpuContext, GpuUniforms, RasterPipeline};
 use render::Framebuffer;
 
 pub const GOLDEN_RATIO: f32 = 1.618_034;
@@ -88,6 +89,47 @@ pub fn render_frame(
         let tri_color = fg_override.unwrap_or(v0.color);
         rasterize_triangle(fb, s0, s1, s2, dx, dy, luminance, tri_color);
     }
+}
+
+/// Render a single frame using the GPU compute pipeline.
+pub fn render_frame_gpu(
+    fb: &mut Framebuffer,
+    pipeline: &RasterPipeline,
+    ctx: &GpuContext,
+    azimuth: f32,
+    altitude: f32,
+    zoom: f32,
+    light_dir: Vec3,
+    fg_override: Option<[f32; 3]>,
+) {
+    let w = fb.width;
+    let h = fb.height;
+
+    let logical_h: f32 = 1.0;
+    let logical_w: f32 = w as f32 / (h as f32 * 1.8);
+    let dx = logical_w / w as f32;
+    let dy = logical_h / h as f32;
+
+    let uniforms = GpuUniforms {
+        width: w as u32,
+        height: h as u32,
+        cos_az: azimuth.cos(),
+        sin_az: azimuth.sin(),
+        cos_al: (-altitude).cos(),
+        sin_al: (-altitude).sin(),
+        zoom,
+        logical_w,
+        logical_h,
+        dx,
+        dy,
+        has_fg_override: if fg_override.is_some() { 1 } else { 0 },
+        light_dir: light_dir.into(),
+        _pad0: 0.0,
+        fg_override: fg_override.unwrap_or([0.8, 0.8, 0.8]),
+        _pad1: 0.0,
+    };
+
+    pipeline.render(ctx, fb, &uniforms);
 }
 
 /// Convert framebuffer to a string of ASCII art (rows separated by newlines).

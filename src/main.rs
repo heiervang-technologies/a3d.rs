@@ -5,11 +5,11 @@ use clap::Parser;
 use crossterm::event::KeyCode;
 use glam::Vec3;
 
-use a3d::gpu::GpuContext;
+use a3d::gpu::{GpuContext, RasterPipeline};
 use a3d::model::load_model;
 use a3d::render::Framebuffer;
 use a3d::terminal::{InputEvent, TerminalDisplay};
-use a3d::{render_frame, AZ_SPEED, AL_SPEED};
+use a3d::{render_frame, render_frame_gpu, AZ_SPEED, AL_SPEED};
 
 #[derive(Parser)]
 #[command(name = "a3d", about = "GPU-accelerated ASCII 3D renderer")]
@@ -32,6 +32,14 @@ struct Args {
     /// Enable ANSI true color output
     #[arg(short, long)]
     color: bool,
+
+    /// Force GPU rendering
+    #[arg(long)]
+    gpu: bool,
+
+    /// Force CPU rendering
+    #[arg(long, conflicts_with = "gpu")]
+    cpu: bool,
 
     /// Foreground color as hex (e.g. ff6600 or #ff6600)
     #[arg(long, value_parser = parse_hex_color)]
@@ -57,9 +65,6 @@ fn main() {
     env_logger::init();
     let args = Args::parse();
 
-    // Initialize GPU
-    let _gpu = pollster::block_on(GpuContext::new());
-
     // Load model
     let mesh = load_model(&args.model);
     log::info!(
@@ -68,10 +73,37 @@ fn main() {
         mesh.indices.len()
     );
 
+    // Initialize GPU (optional)
+    let gpu_ctx = if args.cpu {
+        log::info!("CPU rendering forced");
+        None
+    } else {
+        let ctx = pollster::block_on(GpuContext::new());
+        if ctx.is_none() {
+            if args.gpu {
+                eprintln!("Error: --gpu requested but no GPU available");
+                std::process::exit(1);
+            }
+            log::info!("No GPU available, falling back to CPU");
+        }
+        ctx
+    };
+
     // Setup terminal
     let mut display = TerminalDisplay::new().expect("Failed to initialize terminal");
     let (w, h) = display.size();
     let mut fb = Framebuffer::new(w, h);
+
+    // Create GPU pipeline if available
+    let mut gpu_pipeline = gpu_ctx.as_ref().map(|ctx| {
+        log::info!("Using GPU rendering");
+        RasterPipeline::new(ctx, &mesh, w as u32, h as u32)
+    });
+
+    let use_gpu = gpu_pipeline.is_some();
+    if !use_gpu {
+        log::info!("Using CPU rendering");
+    }
 
     let mut azimuth: f32 = 0.0;
     let mut altitude: f32 = 0.0;
@@ -109,7 +141,7 @@ fn main() {
             }
         }
 
-        // Auto-rotate if not interactive (matches voxcii exactly)
+        // Auto-rotate if not interactive
         if !args.interactive {
             azimuth = AZ_SPEED * t;
             altitude = 0.125 * std::f32::consts::PI * (1.0 - (AL_SPEED * t).sin());
@@ -119,9 +151,17 @@ fn main() {
         let (w, h) = display.size();
         if w != fb.width || h != fb.height {
             fb.resize(w, h);
+            if let (Some(pipeline), Some(ctx)) = (&mut gpu_pipeline, &gpu_ctx) {
+                pipeline.resize(ctx, w as u32, h as u32);
+            }
         }
 
-        render_frame(&mut fb, &mesh, azimuth, altitude, zoom, light_dir, fg_color);
+        // Render
+        if let (Some(pipeline), Some(ctx)) = (&gpu_pipeline, &gpu_ctx) {
+            render_frame_gpu(&mut fb, pipeline, ctx, azimuth, altitude, zoom, light_dir, fg_color);
+        } else {
+            render_frame(&mut fb, &mesh, azimuth, altitude, zoom, light_dir, fg_color);
+        }
 
         let _ = display.render(&fb, color, bg_color);
 
