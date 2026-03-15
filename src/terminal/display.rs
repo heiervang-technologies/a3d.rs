@@ -27,21 +27,30 @@ impl TerminalDisplay {
         (w as usize, h as usize)
     }
 
-    pub fn render(&mut self, fb: &Framebuffer, color: bool) -> io::Result<()> {
-        // ~20 bytes per colored char worst case (\x1b[38;2;RRR;GGG;BBBmC)
+    pub fn render(&mut self, fb: &Framebuffer, color: bool, bg: Option<[f32; 3]>) -> io::Result<()> {
+        // ~40 bytes per char worst case (fg + bg escape sequences)
         let cap = if color {
-            fb.width * fb.height * 20 + fb.height * 10
+            fb.width * fb.height * 40 + fb.height * 10
         } else {
             fb.width * fb.height + fb.height * 10
         };
         let mut buf = String::with_capacity(cap);
         buf.push_str("\x1b[H");
 
+        // Set background color once if specified
+        if let Some(bg) = bg {
+            use std::fmt::Write;
+            let r = (bg[0] * 255.0) as u8;
+            let g = (bg[1] * 255.0) as u8;
+            let b = (bg[2] * 255.0) as u8;
+            write!(buf, "\x1b[48;2;{r};{g};{b}m").unwrap();
+        }
+
         if color {
             let mut prev_r: u8 = 0;
             let mut prev_g: u8 = 0;
             let mut prev_b: u8 = 0;
-            let mut has_color = false;
+            let mut has_fg = false;
 
             for y in 0..fb.height {
                 for x in 0..fb.width {
@@ -49,9 +58,9 @@ impl TerminalDisplay {
                     let ch = fb.chars[idx];
 
                     if ch == ' ' {
-                        if has_color {
-                            buf.push_str("\x1b[0m");
-                            has_color = false;
+                        if has_fg {
+                            buf.push_str("\x1b[39m");
+                            has_fg = false;
                         }
                         buf.push(' ');
                     } else {
@@ -61,13 +70,13 @@ impl TerminalDisplay {
                         let g = (col[1] * lum * 255.0).clamp(0.0, 255.0) as u8;
                         let b = (col[2] * lum * 255.0).clamp(0.0, 255.0) as u8;
 
-                        if !has_color || r != prev_r || g != prev_g || b != prev_b {
+                        if !has_fg || r != prev_r || g != prev_g || b != prev_b {
                             use std::fmt::Write;
                             write!(buf, "\x1b[38;2;{r};{g};{b}m").unwrap();
                             prev_r = r;
                             prev_g = g;
                             prev_b = b;
-                            has_color = true;
+                            has_fg = true;
                         }
                         buf.push(ch);
                     }
@@ -76,8 +85,8 @@ impl TerminalDisplay {
                     buf.push_str("\r\n");
                 }
             }
-            if has_color {
-                buf.push_str("\x1b[0m");
+            if has_fg {
+                buf.push_str("\x1b[39m");
             }
         } else {
             for y in 0..fb.height {

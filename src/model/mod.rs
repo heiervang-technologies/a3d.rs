@@ -1,4 +1,5 @@
 mod loader;
-mod mesh;
+pub mod mesh;
 
 pub use loader::load_model;
+pub use mesh::Mesh;

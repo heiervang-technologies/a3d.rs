@@ -1,8 +1,3 @@
-mod gpu;
-mod model;
-mod render;
-mod terminal;
-
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -10,14 +5,11 @@ use clap::Parser;
 use crossterm::event::KeyCode;
 use glam::Vec3;
 
-use gpu::GpuContext;
-use model::load_model;
-use render::Framebuffer;
-use terminal::TerminalDisplay;
-
-const GOLDEN_RATIO: f32 = 1.618_034;
-const AZ_SPEED: f32 = 2.0;
-const AL_SPEED: f32 = GOLDEN_RATIO * 0.25;
+use a3d::gpu::GpuContext;
+use a3d::model::load_model;
+use a3d::render::Framebuffer;
+use a3d::terminal::TerminalDisplay;
+use a3d::{render_frame, AZ_SPEED, AL_SPEED};
 
 #[derive(Parser)]
 #[command(name = "a3d", about = "GPU-accelerated ASCII 3D renderer")]
@@ -40,22 +32,25 @@ struct Args {
     /// Enable ANSI true color output
     #[arg(short, long)]
     color: bool,
+
+    /// Foreground color as hex (e.g. ff6600 or #ff6600)
+    #[arg(long, value_parser = parse_hex_color)]
+    fg: Option<[f32; 3]>,
+
+    /// Background color as hex (e.g. 1a1a2e or #1a1a2e)
+    #[arg(long, value_parser = parse_hex_color)]
+    bg: Option<[f32; 3]>,
 }
 
-fn rotate_y(v: Vec3, cos_a: f32, sin_a: f32) -> Vec3 {
-    Vec3::new(
-        v.x * cos_a - v.z * sin_a,
-        v.y,
-        v.x * sin_a + v.z * cos_a,
-    )
-}
-
-fn rotate_x(v: Vec3, cos_a: f32, sin_a: f32) -> Vec3 {
-    Vec3::new(
-        v.x,
-        v.y * cos_a - v.z * sin_a,
-        v.y * sin_a + v.z * cos_a,
-    )
+fn parse_hex_color(s: &str) -> Result<[f32; 3], String> {
+    let s = s.strip_prefix('#').unwrap_or(s);
+    if s.len() != 6 {
+        return Err("expected 6 hex digits (e.g. ff6600)".to_string());
+    }
+    let r = u8::from_str_radix(&s[0..2], 16).map_err(|e| e.to_string())?;
+    let g = u8::from_str_radix(&s[2..4], 16).map_err(|e| e.to_string())?;
+    let b = u8::from_str_radix(&s[4..6], 16).map_err(|e| e.to_string())?;
+    Ok([r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0])
 }
 
 fn main() {
@@ -82,6 +77,12 @@ fn main() {
     let mut altitude: f32 = 0.0;
     let mut zoom = args.zoom;
     let mut color = args.color;
+    let fg_color = args.fg;
+    let bg_color = args.bg;
+
+    if fg_color.is_some() || bg_color.is_some() {
+        color = true;
+    }
 
     let frame_duration = Duration::from_secs_f64(1.0 / args.fps as f64);
     let start = Instant::now();
@@ -118,133 +119,14 @@ fn main() {
             fb.resize(w, h);
         }
 
-        // Logical dimensions with aspect ratio correction (chars are ~1.8x taller than wide)
-        let logical_h: f32 = 1.0;
-        let logical_w: f32 = w as f32 / (h as f32 * 1.8);
-        let dx = logical_w / w as f32;
-        let dy = logical_h / h as f32;
+        render_frame(&mut fb, &mesh, azimuth, altitude, zoom, light_dir, fg_color);
 
-        // Pre-compute rotation
-        let cos_az = azimuth.cos();
-        let sin_az = azimuth.sin();
-        let cos_al = (-altitude).cos();
-        let sin_al = (-altitude).sin();
-
-        fb.clear();
-
-        for tri in mesh.indices.chunks(3) {
-            if tri.len() < 3 {
-                continue;
-            }
-
-            let v0 = &mesh.vertices[tri[0] as usize];
-            let p0 = Vec3::from(v0.position);
-            let p1 = Vec3::from(mesh.vertices[tri[1] as usize].position);
-            let p2 = Vec3::from(mesh.vertices[tri[2] as usize].position);
-
-            // Rotate vertices: Y first, then X (matches voxcii)
-            let r0 = rotate_x(rotate_y(p0, cos_az, sin_az), cos_al, sin_al);
-            let r1 = rotate_x(rotate_y(p1, cos_az, sin_az), cos_al, sin_al);
-            let r2 = rotate_x(rotate_y(p2, cos_az, sin_az), cos_al, sin_al);
-
-            // Compute face normal from rotated vertices, negate for lighting
-            let normal = (r1 - r0).cross(r2 - r0);
-            if normal.length_squared() < 1e-10 {
-                continue;
-            }
-            let normal = normal.normalize();
-            let luminance = (-normal).dot(light_dir) * 0.5 + 0.5;
-
-            // Orthographic projection to screen (matches voxcii mapToSurface)
-            let project = |v: Vec3| -> Vec3 {
-                Vec3::new(
-                    0.5 * logical_w + 0.5 * v.x * zoom,
-                    0.5 * logical_h - 0.5 * v.y * zoom,
-                    0.5 + 0.5 * v.z * zoom,
-                )
-            };
-
-            let s0 = project(r0);
-            let s1 = project(r1);
-            let s2 = project(r2);
-
-            rasterize_triangle(&mut fb, s0, s1, s2, dx, dy, luminance, v0.color);
-        }
-
-        let _ = display.render(&fb, color);
+        let _ = display.render(&fb, color, bg_color);
 
         // Frame rate limiting
         let elapsed = frame_start.elapsed();
         if elapsed < frame_duration {
             std::thread::sleep(frame_duration - elapsed);
-        }
-    }
-}
-
-/// Scanline triangle rasterizer matching voxcii's algorithm exactly.
-fn rasterize_triangle(
-    fb: &mut Framebuffer,
-    p0: Vec3,
-    p1: Vec3,
-    p2: Vec3,
-    dx: f32,
-    dy: f32,
-    luminance: f32,
-    color: [f32; 3],
-) {
-    // Back-face culling: 2D cross product test on screen coords
-    if (p1.x - p0.x) * (p2.y - p1.y) < (p2.x - p1.x) * (p1.y - p0.y) {
-        return;
-    }
-
-    // Sort vertices by X
-    let mut pts = [p0, p1, p2];
-    pts.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap());
-
-    // Triangle plane normal for Z interpolation
-    let tri_normal = (p1 - p0).cross(p2 - p0);
-    let nz = if tri_normal.z == 0.0 { 0.0001 } else { tri_normal.z };
-
-    let xi = pts[0].x + dx / 2.0;
-    let xf = pts[2].x - dx / 2.0;
-
-    let x_start = ((xi / dx) as i32).max(0);
-    let x_end = ((xf / dx) as i32).min(fb.width as i32 - 1);
-
-    // Interpolate Y along an edge at given X
-    let get_y = |pa: Vec3, pb: Vec3, x: f32| -> f32 {
-        if pa.x == pb.x {
-            pa.y
-        } else {
-            pa.y + (pb.y - pa.y) * (x - pa.x) / (pb.x - pa.x)
-        }
-    };
-
-    for xx in x_start..=x_end {
-        let x = (xx as f32 + 0.5) * dx;
-
-        // Find Y span from triangle edges
-        let y1 = if x <= pts[1].x {
-            get_y(pts[0], pts[1], x)
-        } else {
-            get_y(pts[1], pts[2], x)
-        };
-        let y2 = get_y(pts[0], pts[2], x);
-
-        let yi = y1.min(y2);
-        let yf = y1.max(y2);
-
-        let y_start = (((yi + dy / 2.0) / dy) as i32).max(0);
-        let y_end = (((yf - dy / 2.0) / dy) as i32).min(fb.height as i32 - 1);
-
-        for yy in y_start..=y_end {
-            let y = (yy as f32 + 0.5) * dy;
-
-            // Z from plane equation
-            let depth = pts[0].z
-                - (tri_normal.x * (x - pts[0].x) + tri_normal.y * (y - pts[0].y)) / nz;
-
-            fb.set_pixel(xx as usize, yy as usize, depth, luminance, color);
         }
     }
 }
