@@ -119,15 +119,29 @@ fn main() {
     let frame_duration = Duration::from_secs_f64(1.0 / args.fps as f64);
     let start = Instant::now();
     let light_dir = Vec3::new(1.0, -1.0, 0.0).normalize();
+    let mut last_fps_update = Instant::now();
+    let mut frame_count = 0u32;
+    let mut current_fps = 0.0f32;
+    let backend_label = if gpu_pipeline.is_some() { "GPU" } else { "CPU" };
 
     loop {
         let frame_start = Instant::now();
         let t = start.elapsed().as_secs_f32();
 
-        // Handle input
-        if let Some(ev) = display.poll_event() {
+        // Update FPS counter
+        frame_count += 1;
+        let fps_elapsed = last_fps_update.elapsed().as_secs_f32();
+        if fps_elapsed >= 0.5 {
+            current_fps = frame_count as f32 / fps_elapsed;
+            frame_count = 0;
+            last_fps_update = Instant::now();
+        }
+
+        // Handle all pending input events
+        let mut should_quit = false;
+        for ev in display.poll_events() {
             match ev {
-                InputEvent::Key(KeyCode::Char('q') | KeyCode::Esc) => break,
+                InputEvent::Key(KeyCode::Char('q') | KeyCode::Esc) => should_quit = true,
                 InputEvent::Key(KeyCode::Up | KeyCode::Char('k')) => altitude += 0.1,
                 InputEvent::Key(KeyCode::Down | KeyCode::Char('j')) => altitude -= 0.1,
                 InputEvent::Key(KeyCode::Left | KeyCode::Char('h')) => azimuth += 0.1,
@@ -139,6 +153,9 @@ fn main() {
                 InputEvent::Key(KeyCode::Char('c')) => color = !color,
                 _ => {}
             }
+        }
+        if should_quit {
+            break;
         }
 
         // Auto-rotate if not interactive
@@ -163,7 +180,13 @@ fn main() {
             render_frame(&mut fb, &mesh, azimuth, altitude, zoom, light_dir, fg_color);
         }
 
-        let _ = display.render(&fb, color, bg_color);
+        let fps_label = if current_fps > 0.0 {
+            Some(format!("{:.0} FPS [{}]", current_fps, backend_label))
+        } else {
+            None
+        };
+
+        let _ = display.render(&fb, color, bg_color, fps_label.as_deref());
 
         // Frame rate limiting
         let elapsed = frame_start.elapsed();
