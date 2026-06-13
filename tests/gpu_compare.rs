@@ -26,11 +26,27 @@ fn gpu_vs_cpu_bunny() {
     render_frame(&mut cpu_fb, &mesh, azimuth, altitude, zoom, LIGHT_DIR, None);
     let cpu_str = framebuffer_to_string(&cpu_fb);
 
-    // GPU render
-    let ctx = pollster::block_on(GpuContext::new()).expect("No GPU available");
+    // GPU render — skip the test gracefully on machines without a usable
+    // adapter (e.g. GPU-less CI runners) instead of failing the suite.
+    let ctx = match pollster::block_on(GpuContext::new()) {
+        Some(ctx) => ctx,
+        None => {
+            eprintln!("Skipping gpu_vs_cpu_bunny: no GPU adapter available");
+            return;
+        }
+    };
     let pipeline = RasterPipeline::new(&ctx, &mesh, width as u32, height as u32);
     let mut gpu_fb = Framebuffer::new(width, height);
-    render_frame_gpu(&mut gpu_fb, &pipeline, &ctx, azimuth, altitude, zoom, LIGHT_DIR, None);
+    render_frame_gpu(
+        &mut gpu_fb,
+        &pipeline,
+        &ctx,
+        azimuth,
+        altitude,
+        zoom,
+        LIGHT_DIR,
+        None,
+    );
     let gpu_str = framebuffer_to_string(&gpu_fb);
 
     println!("=== CPU ===");
@@ -51,5 +67,23 @@ fn gpu_vs_cpu_bunny() {
             }
         }
     }
-    println!("Total diffs: {} / {}", diffs, cpu_str.len());
+    let total = cpu_str.chars().count();
+    println!("Total diffs: {} / {}", diffs, total);
+
+    // The GPU pipeline mirrors the CPU rasterizer, so outputs should be nearly
+    // identical — only a handful of edge pixels may differ from float rounding.
+    // Observed: 1/1943 (~0.05%). A 1% ceiling catches real regressions while
+    // tolerating that jitter. Also guard against a blank GPU render.
+    assert!(
+        cpu_str.chars().any(|c| c != ' ' && c != '\n'),
+        "CPU render is blank — test fixture is broken"
+    );
+    let diff_ratio = diffs as f64 / total as f64;
+    assert!(
+        diff_ratio < 0.01,
+        "GPU output diverged from CPU by {:.2}% ({} / {} chars) — exceeds 1% tolerance",
+        diff_ratio * 100.0,
+        diffs,
+        total
+    );
 }
