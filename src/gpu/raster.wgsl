@@ -83,7 +83,9 @@ fn project(v: vec3<f32>) -> vec3<f32> {
     return vec3<f32>(
         0.5 * u.logical_w + 0.5 * v.x * u.zoom,
         0.5 * u.logical_h - 0.5 * v.y * u.zoom,
-        0.5 + 0.5 * v.z * u.zoom,
+        // Depth must stay in [0,1] because pack_depth clamps before quantizing;
+        // scaling z by zoom would clamp and break occlusion. See render_frame.
+        0.5 + 0.5 * v.z,
     );
 }
 

@@ -3,7 +3,11 @@ use std::path::Path;
 use super::mesh::{Mesh, Vertex};
 
 pub fn load_model(path: &Path) -> Mesh {
-    match path.extension().and_then(|e| e.to_str()) {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase);
+    match ext.as_deref() {
         Some("obj") => load_obj(path),
         Some("stl") => load_stl(path),
         _ => panic!("Unsupported model format: {}", path.display()),
