@@ -214,3 +214,38 @@ pub fn rasterize_triangle(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glam::Vec3;
+
+    #[test]
+    fn rotate_y_quarter_turn() {
+        // 90°: cos=0, sin=1. (1,0,0) -> (0,0,1).
+        let r = rotate_y(Vec3::new(1.0, 0.0, 0.0), 0.0, 1.0);
+        assert!((r - Vec3::new(0.0, 0.0, 1.0)).length() < 1e-6, "{r}");
+    }
+
+    #[test]
+    fn rotate_x_quarter_turn() {
+        // 90°: cos=0, sin=1. (0,1,0) -> (0,0,1).
+        let r = rotate_x(Vec3::new(0.0, 1.0, 0.0), 0.0, 1.0);
+        assert!((r - Vec3::new(0.0, 0.0, 1.0)).length() < 1e-6, "{r}");
+    }
+
+    #[test]
+    fn rotation_identity() {
+        let v = Vec3::new(1.0, 2.0, 3.0);
+        assert_eq!(rotate_y(v, 1.0, 0.0), v);
+        assert_eq!(rotate_x(v, 1.0, 0.0), v);
+    }
+
+    #[test]
+    fn rotation_preserves_length() {
+        let v = Vec3::new(0.3, -0.7, 0.5);
+        let (c, s) = (0.9f32.cos(), 0.9f32.sin());
+        let r = rotate_x(rotate_y(v, c, s), c, s);
+        assert!((r.length() - v.length()).abs() < 1e-6);
+    }
+}

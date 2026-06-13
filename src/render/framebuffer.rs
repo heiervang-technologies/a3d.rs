@@ -54,3 +54,53 @@ impl Framebuffer {
         self.clear();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_initializes_empty() {
+        let fb = Framebuffer::new(4, 3);
+        assert_eq!((fb.width, fb.height), (4, 3));
+        assert_eq!(fb.chars.len(), 12);
+        assert!(fb.chars.iter().all(|&c| c == ' '));
+        assert!(fb.depth.iter().all(|&d| d == f32::INFINITY));
+    }
+
+    #[test]
+    fn set_pixel_keeps_nearest() {
+        let mut fb = Framebuffer::new(2, 2);
+        fb.set_pixel(0, 0, 0.9, 1.0, [1.0, 1.0, 1.0]);
+        // A nearer fragment (smaller z) overwrites.
+        fb.set_pixel(0, 0, 0.1, 1.0, [1.0, 1.0, 1.0]);
+        assert_eq!(fb.depth[0], 0.1);
+        // A farther fragment (larger z) is rejected.
+        fb.set_pixel(0, 0, 0.5, 1.0, [1.0, 1.0, 1.0]);
+        assert_eq!(fb.depth[0], 0.1);
+    }
+
+    #[test]
+    fn set_pixel_out_of_bounds_is_noop() {
+        let mut fb = Framebuffer::new(2, 2);
+        fb.set_pixel(5, 5, 0.1, 1.0, [1.0, 1.0, 1.0]);
+        assert!(fb.depth.iter().all(|&d| d == f32::INFINITY));
+    }
+
+    #[test]
+    fn clear_resets() {
+        let mut fb = Framebuffer::new(2, 2);
+        fb.set_pixel(0, 0, 0.1, 1.0, [1.0, 1.0, 1.0]);
+        fb.clear();
+        assert!(fb.depth.iter().all(|&d| d == f32::INFINITY));
+        assert!(fb.chars.iter().all(|&c| c == ' '));
+    }
+
+    #[test]
+    fn resize_changes_dimensions() {
+        let mut fb = Framebuffer::new(2, 2);
+        fb.resize(5, 4);
+        assert_eq!((fb.width, fb.height), (5, 4));
+        assert_eq!(fb.chars.len(), 20);
+    }
+}
