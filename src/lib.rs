@@ -70,7 +70,12 @@ pub fn render_frame(
             Vec3::new(
                 0.5 * logical_w + 0.5 * v.x * zoom,
                 0.5 * logical_h - 0.5 * v.y * zoom,
-                0.5 + 0.5 * v.z * zoom,
+                // Depth is NOT scaled by zoom: the GPU quantizes depth into a
+                // clamped [0,1] u32 (raster.wgsl pack_depth), so a zoom-scaled z
+                // would spill outside [0,1] and collapse the z-ordering. Since
+                // only relative ordering matters, dropping zoom here keeps z in
+                // [0,1] at every zoom and leaves CPU output unchanged.
+                0.5 + 0.5 * v.z,
             )
         };
 
@@ -158,7 +163,9 @@ pub fn rasterize_triangle(
     }
 
     let mut pts = [p0, p1, p2];
-    pts.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap());
+    // total_cmp instead of partial_cmp().unwrap(): a NaN coordinate from a
+    // malformed model would otherwise panic the render loop.
+    pts.sort_by(|a, b| a.x.total_cmp(&b.x));
 
     let tri_normal = (p1 - p0).cross(p2 - p0);
     let nz = if tri_normal.z == 0.0 {
