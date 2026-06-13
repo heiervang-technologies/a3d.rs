@@ -98,6 +98,30 @@ By default a3d uses the GPU when an adapter is available and falls back to the C
 RUST_LOG=info a3d model.obj
 ```
 
+## Development
+
+```bash
+cargo test                # unit tests + CPU snapshot regression + GPU comparison
+cargo clippy --all-targets --all-features -- -D warnings
+cargo fmt --all
+```
+
+- **`gpu_compare`** renders the same scene on the CPU and GPU and asserts they
+  match; it skips automatically when no GPU adapter is present, so the suite is
+  green on GPU-less machines.
+- **Regenerate the CPU snapshots** after an intentional rendering change:
+  ```bash
+  cargo test --test gen_snapshots -- --ignored
+  ```
+- **Re-record the demo GIF** (requires [VHS](https://github.com/charmbracelet/vhs)
+  + ffmpeg; see the optimization note in `assets/demo.tape`):
+  ```bash
+  vhs assets/demo.tape
+  ```
+
+CI runs `fmt --check`, `clippy -D warnings`, build, and the full test suite on
+every pull request.
+
 ## Architecture
 
 ```
