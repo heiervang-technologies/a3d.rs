@@ -1,2 +1,4 @@
 /target
-Cargo.lock
+
+# Local-only symlink to a machine-specific model directory.
+/3d
