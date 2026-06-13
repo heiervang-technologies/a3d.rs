@@ -537,10 +537,37 @@ impl RasterPipeline {
 
         queue.submit(std::iter::once(encoder.finish()));
 
-        // Read back results
-        let char_data = self.read_buffer(device, &self.readback_char_buffer, char_size);
-        let lum_data = self.read_buffer(device, &self.readback_luminance_buffer, lum_size);
-        let color_data = self.read_buffer(device, &self.readback_color_buffer, color_size);
+        // Read back all three buffers with a SINGLE device sync. Mapping each
+        // buffer and polling separately (the old read_buffer helper) blocked on
+        // three GPU round-trips per frame; here we kick off all three maps, then
+        // poll(Wait) once to resolve them together.
+        let char_slice = self.readback_char_buffer.slice(0..char_size);
+        let lum_slice = self.readback_luminance_buffer.slice(0..lum_size);
+        let color_slice = self.readback_color_buffer.slice(0..color_size);
+
+        let (tx_c, rx_c) = std::sync::mpsc::channel();
+        let (tx_l, rx_l) = std::sync::mpsc::channel();
+        let (tx_k, rx_k) = std::sync::mpsc::channel();
+        char_slice.map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx_c.send(r);
+        });
+        lum_slice.map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx_l.send(r);
+        });
+        color_slice.map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx_k.send(r);
+        });
+        device.poll(wgpu::Maintain::Wait);
+        rx_c.recv().unwrap().unwrap();
+        rx_l.recv().unwrap().unwrap();
+        rx_k.recv().unwrap().unwrap();
+
+        let char_data = char_slice.get_mapped_range().to_vec();
+        let lum_data = lum_slice.get_mapped_range().to_vec();
+        let color_data = color_slice.get_mapped_range().to_vec();
+        self.readback_char_buffer.unmap();
+        self.readback_luminance_buffer.unmap();
+        self.readback_color_buffer.unmap();
 
         // Populate framebuffer
         let chars: &[u32] = bytemuck::cast_slice(&char_data);
@@ -555,18 +582,5 @@ impl RasterPipeline {
                 fb.colors[i] = [colors[i * 3], colors[i * 3 + 1], colors[i * 3 + 2]];
             }
         }
-    }
-
-    fn read_buffer(&self, device: &wgpu::Device, buffer: &wgpu::Buffer, size: u64) -> Vec<u8> {
-        let slice = buffer.slice(0..size);
-        let (tx, rx) = std::sync::mpsc::channel();
-        slice.map_async(wgpu::MapMode::Read, move |result| {
-            tx.send(result).unwrap();
-        });
-        device.poll(wgpu::Maintain::Wait);
-        rx.recv().unwrap().unwrap();
-        let data = slice.get_mapped_range().to_vec();
-        buffer.unmap();
-        data
     }
 }
