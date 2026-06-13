@@ -8,9 +8,8 @@ license = "MIT"
 [dependencies]
 wgpu = "24"
 glam = "0.29"
-ratatui = "0.29"
 crossterm = "0.28"
-tobj = { version = "4", features = ["async"] }
+tobj = "4"
 clap = { version = "4", features = ["derive"] }
 pollster = "0.4"
 bytemuck = { version = "1", features = ["derive"] }

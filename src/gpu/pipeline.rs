@@ -223,21 +223,27 @@ impl RasterPipeline {
         let output_char_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("output char buffer"),
             size: pixel_count * 4, // u32 per pixel
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let output_luminance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("output luminance buffer"),
             size: pixel_count * 4, // f32 per pixel
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let output_color_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("output color buffer"),
             size: pixel_count * 12, // 3x f32 per pixel
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
@@ -268,14 +274,38 @@ impl RasterPipeline {
             label: Some("raster bind group"),
             layout: &bind_group_layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: uniform_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: vertex_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: index_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: transformed_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 4, resource: depth_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 5, resource: output_char_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 6, resource: output_luminance_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 7, resource: output_color_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: vertex_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: index_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: transformed_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: depth_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: output_char_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: output_luminance_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: output_color_buffer.as_entire_binding(),
+                },
             ],
         });
 
@@ -319,19 +349,25 @@ impl RasterPipeline {
         self.output_char_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("output char buffer"),
             size: pixel_count * 4,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         self.output_luminance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("output luminance buffer"),
             size: pixel_count * 4,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         self.output_color_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("output color buffer"),
             size: pixel_count * 12,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         self.readback_char_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -359,14 +395,38 @@ impl RasterPipeline {
             label: Some("raster bind group"),
             layout: &bind_group_layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: self.uniform_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: self.vertex_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: self.index_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: self.transformed_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 4, resource: self.depth_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 5, resource: self.output_char_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 6, resource: self.output_luminance_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 7, resource: self.output_color_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.vertex_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.index_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: self.transformed_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self.depth_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: self.output_char_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: self.output_luminance_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: self.output_color_buffer.as_entire_binding(),
+                },
             ],
         });
 
@@ -389,15 +449,27 @@ impl RasterPipeline {
 
         // Clear output char to space (32)
         let clear_char: Vec<u32> = vec![32u32; pixel_count];
-        queue.write_buffer(&self.output_char_buffer, 0, bytemuck::cast_slice(&clear_char));
+        queue.write_buffer(
+            &self.output_char_buffer,
+            0,
+            bytemuck::cast_slice(&clear_char),
+        );
 
         // Clear luminance to 0
         let clear_lum: Vec<f32> = vec![0.0f32; pixel_count];
-        queue.write_buffer(&self.output_luminance_buffer, 0, bytemuck::cast_slice(&clear_lum));
+        queue.write_buffer(
+            &self.output_luminance_buffer,
+            0,
+            bytemuck::cast_slice(&clear_lum),
+        );
 
         // Clear color to 0
         let clear_color: Vec<f32> = vec![0.0f32; pixel_count * 3];
-        queue.write_buffer(&self.output_color_buffer, 0, bytemuck::cast_slice(&clear_color));
+        queue.write_buffer(
+            &self.output_color_buffer,
+            0,
+            bytemuck::cast_slice(&clear_color),
+        );
 
         // Encode compute dispatches
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -412,7 +484,7 @@ impl RasterPipeline {
             });
             pass.set_pipeline(&self.vertex_transform_pipeline);
             pass.set_bind_group(0, &self.bind_group, &[]);
-            pass.dispatch_workgroups((self.num_vertices + 255) / 256, 1, 1);
+            pass.dispatch_workgroups(self.num_vertices.div_ceil(256), 1, 1);
         }
 
         // Pass 2a: rasterize depth
@@ -423,7 +495,7 @@ impl RasterPipeline {
             });
             pass.set_pipeline(&self.rasterize_depth_pipeline);
             pass.set_bind_group(0, &self.bind_group, &[]);
-            pass.dispatch_workgroups((self.num_triangles + 63) / 64, 1, 1);
+            pass.dispatch_workgroups(self.num_triangles.div_ceil(64), 1, 1);
         }
 
         // Pass 2b: rasterize shade
@@ -434,16 +506,34 @@ impl RasterPipeline {
             });
             pass.set_pipeline(&self.rasterize_shade_pipeline);
             pass.set_bind_group(0, &self.bind_group, &[]);
-            pass.dispatch_workgroups((self.num_triangles + 63) / 64, 1, 1);
+            pass.dispatch_workgroups(self.num_triangles.div_ceil(64), 1, 1);
         }
 
         // Copy output to readback buffers
         let char_size = (pixel_count * 4) as u64;
         let lum_size = (pixel_count * 4) as u64;
         let color_size = (pixel_count * 12) as u64;
-        encoder.copy_buffer_to_buffer(&self.output_char_buffer, 0, &self.readback_char_buffer, 0, char_size);
-        encoder.copy_buffer_to_buffer(&self.output_luminance_buffer, 0, &self.readback_luminance_buffer, 0, lum_size);
-        encoder.copy_buffer_to_buffer(&self.output_color_buffer, 0, &self.readback_color_buffer, 0, color_size);
+        encoder.copy_buffer_to_buffer(
+            &self.output_char_buffer,
+            0,
+            &self.readback_char_buffer,
+            0,
+            char_size,
+        );
+        encoder.copy_buffer_to_buffer(
+            &self.output_luminance_buffer,
+            0,
+            &self.readback_luminance_buffer,
+            0,
+            lum_size,
+        );
+        encoder.copy_buffer_to_buffer(
+            &self.output_color_buffer,
+            0,
+            &self.readback_color_buffer,
+            0,
+            color_size,
+        );
 
         queue.submit(std::iter::once(encoder.finish()));
 

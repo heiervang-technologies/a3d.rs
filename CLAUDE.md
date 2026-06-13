@@ -16,15 +16,15 @@ RUST_LOG=info cargo run -- model.obj   # debug logging
 ## Project Structure
 
 - `src/main.rs` — render loop, CLI args (clap), CPU triangle rasterizer
-- `src/gpu/` — wgpu context (Vulkan), compute pipeline (stub, M2 milestone)
+- `src/gpu/` — wgpu context (Vulkan), 3-pass compute pipeline (transform → depth → shade) in `raster.wgsl`
 - `src/model/` — OBJ (tobj) and STL (stl_io) loading, mesh normalization
 - `src/render/` — camera (orbital, perspective), framebuffer (z-buffer + char grid), ASCII luminance mapping
 - `src/terminal/` — crossterm raw mode display, keyboard input
 
 ## Key Design Decisions
 
-- CPU rasterization is the current fallback; GPU compute pipeline (wgpu) is M2
-- Barycentric coordinate interpolation for z-depth within triangles
+- GPU compute pipeline (wgpu) renders by default; CPU rasterization is the fallback when no adapter is available
+- Plane-equation (triangle-normal) z-depth interpolation within triangles
 - Aspect ratio correction: `width / (height * 1.8)` for terminal characters
 - Golden ratio oscillation for smooth non-repeating auto-rotation
 - Model normalization to [-1, 1] on load
@@ -38,7 +38,7 @@ RUST_LOG=info cargo run -- model.obj   # debug logging
 
 ## Roadmap
 
-Tracked in GitHub Issue #1. Current: M1 (core rendering). Next: M2 (GPU compute pipeline).
+Tracked in GitHub Issue #1. M1 (core rendering) and M2 (GPU compute pipeline) are complete. Next: M3 (advanced rendering — Phong lighting, shadows, color).
 
 ## Test Models
 

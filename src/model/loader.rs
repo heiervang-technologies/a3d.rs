@@ -43,7 +43,11 @@ fn load_obj(path: &Path) -> Mesh {
             };
 
             vertices.push(Vertex {
-                position: [mesh.positions[i], mesh.positions[i + 1], mesh.positions[i + 2]],
+                position: [
+                    mesh.positions[i],
+                    mesh.positions[i + 1],
+                    mesh.positions[i + 2],
+                ],
                 normal,
                 color: mat_color,
             });

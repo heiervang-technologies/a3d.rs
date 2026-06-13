@@ -9,8 +9,8 @@ Inspired by [voxcii](https://github.com/ashish0kumar/voxcii), rebuilt from scrat
 ## Features
 
 - Real-time 3D rendering with ASCII shading
-- Z-buffered triangle rasterization with barycentric interpolation
-- Perspective projection with configurable camera
+- Z-buffered scanline triangle rasterization with plane-equation depth interpolation
+- Orthographic projection with terminal aspect-ratio correction
 - OBJ format support (with MTL material colors)
 - STL format support (binary and ASCII)
 - Auto-rotation with golden ratio oscillation
@@ -70,12 +70,19 @@ a3d model.obj --fps 60 --zoom 2.5
 | `--interactive` | `-i` | off | Manual rotation with arrow keys |
 | `--zoom` | `-z` | 1.0 | Initial zoom level |
 | `--color` | `-c` | off | Enable ANSI 24-bit true color output |
+| `--gpu` | | auto | Force GPU rendering (error if no adapter) |
+| `--cpu` | | auto | Force CPU rendering |
+| `--fg` | | model | Foreground color as hex, e.g. `ff6600` (implies `--color`) |
+| `--bg` | | none | Background color as hex, e.g. `1a1a2e` (implies `--color`) |
+
+By default a3d uses the GPU when an adapter is available and falls back to the CPU rasterizer otherwise.
 
 ### Controls (interactive mode)
 
 | Key | Action |
 |-----|--------|
-| Arrow keys | Rotate model |
+| Arrow keys / `hjkl` | Rotate model |
+| Scroll wheel | Zoom in/out |
 | `+` / `=` | Zoom in |
 | `-` | Zoom out |
 | `c` | Toggle color on/off |
@@ -94,7 +101,8 @@ src/
 ├── main.rs              # Render loop, CLI, CPU rasterizer
 ├── gpu/
 │   ├── context.rs       # wgpu device/queue/adapter initialization
-│   └── pipeline.rs      # GPU compute pipeline (stub)
+│   ├── pipeline.rs      # GPU compute pipeline (3-pass: transform → depth → shade)
+│   └── raster.wgsl      # Compute shader entry points
 ├── model/
 │   ├── loader.rs        # OBJ and STL file parsing
 │   └── mesh.rs          # Vertex/Mesh types, normalization
@@ -124,7 +132,7 @@ Load & parse ──▶ Normalize to [-1, 1]
 │    ├─ Compute face normal (cross product)   │
 │    ├─ Directional lighting (dot product)    │
 │    ├─ Map luminance → ASCII char            │
-│    ├─ Project vertices (perspective)        │
+│    ├─ Project vertices (orthographic)       │
 │    └─ Rasterize with z-buffer               │
 │       │                                     │
 │       ▼                                     │
@@ -144,7 +152,7 @@ Surface brightness maps to characters from dark to bright:
 ◄─── dark              bright ───►
 ```
 
-Luminance is computed as `dot(face_normal, light_direction) * 0.5 + 0.5`, giving a [0, 1] range that indexes into this 13-character ramp.
+Luminance is computed as `dot(-face_normal, light_direction) * 0.5 + 0.5`, giving a [0, 1] range that indexes into this 12-character ramp.
 
 ## Tech Stack
 
@@ -163,9 +171,9 @@ Luminance is computed as `dot(face_normal, light_direction) * 0.5 + 0.5`, giving
 
 See [Issue #1](https://github.com/heiervang-technologies/a3d.rs/issues/1) for the full roadmap including:
 
-- **M1:** Core rendering MVP (current)
-- **M2:** GPU compute pipeline (wgpu shaders)
-- **M3:** Advanced rendering (Phong lighting, shadows, color)
+- **M1:** Core rendering MVP ✅
+- **M2:** GPU compute pipeline (wgpu shaders) ✅
+- **M3:** Advanced rendering (Phong lighting, shadows, color) — current
 - **M4:** Scene graph and animation
 - **M5:** Performance and polish
 - **M6:** Extensions (WASM, export, plugins)
