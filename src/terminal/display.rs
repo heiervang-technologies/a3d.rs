@@ -1,10 +1,12 @@
 use std::io::{self, Stdout, Write};
 
 use crossterm::{
-    cursor,
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, MouseEvent, MouseEventKind},
+    ExecutableCommand, cursor,
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, MouseEvent,
+        MouseEventKind,
+    },
     terminal,
-    ExecutableCommand,
 };
 
 use crate::render::Framebuffer;
@@ -35,7 +37,13 @@ impl TerminalDisplay {
         (w as usize, h as usize)
     }
 
-    pub fn render(&mut self, fb: &Framebuffer, color: bool, bg: Option<[f32; 3]>, overlay: Option<&str>) -> io::Result<()> {
+    pub fn render(
+        &mut self,
+        fb: &Framebuffer,
+        color: bool,
+        bg: Option<[f32; 3]>,
+        overlay: Option<&str>,
+    ) -> io::Result<()> {
         use std::fmt::Write;
         // ~40 bytes per char worst case (fg + bg escape sequences)
         let cap = if color {

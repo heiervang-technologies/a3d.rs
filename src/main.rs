@@ -9,7 +9,7 @@ use a3d::gpu::{GpuContext, RasterPipeline};
 use a3d::model::load_model;
 use a3d::render::Framebuffer;
 use a3d::terminal::{InputEvent, TerminalDisplay};
-use a3d::{render_frame, render_frame_gpu, AZ_SPEED, AL_SPEED};
+use a3d::{AL_SPEED, AZ_SPEED, render_frame, render_frame_gpu};
 
 #[derive(Parser)]
 #[command(name = "a3d", about = "GPU-accelerated ASCII 3D renderer")]
@@ -146,7 +146,9 @@ fn main() {
                 InputEvent::Key(KeyCode::Down | KeyCode::Char('j')) => altitude -= 0.1,
                 InputEvent::Key(KeyCode::Left | KeyCode::Char('h')) => azimuth += 0.1,
                 InputEvent::Key(KeyCode::Right | KeyCode::Char('l')) => azimuth -= 0.1,
-                InputEvent::Key(KeyCode::Char('+') | KeyCode::Char('=')) => zoom = (zoom * 1.1).min(10.0),
+                InputEvent::Key(KeyCode::Char('+') | KeyCode::Char('=')) => {
+                    zoom = (zoom * 1.1).min(10.0)
+                }
                 InputEvent::Key(KeyCode::Char('-')) => zoom = (zoom * 0.9).max(0.1),
                 InputEvent::ScrollUp => zoom = (zoom * 1.1).min(10.0),
                 InputEvent::ScrollDown => zoom = (zoom * 0.9).max(0.1),
@@ -175,7 +177,9 @@ fn main() {
 
         // Render
         if let (Some(pipeline), Some(ctx)) = (&gpu_pipeline, &gpu_ctx) {
-            render_frame_gpu(&mut fb, pipeline, ctx, azimuth, altitude, zoom, light_dir, fg_color);
+            render_frame_gpu(
+                &mut fb, pipeline, ctx, azimuth, altitude, zoom, light_dir, fg_color,
+            );
         } else {
             render_frame(&mut fb, &mesh, azimuth, altitude, zoom, light_dir, fg_color);
         }

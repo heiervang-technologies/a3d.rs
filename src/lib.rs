@@ -12,19 +12,11 @@ pub const AZ_SPEED: f32 = 2.0;
 pub const AL_SPEED: f32 = GOLDEN_RATIO * 0.25;
 
 pub fn rotate_y(v: Vec3, cos_a: f32, sin_a: f32) -> Vec3 {
-    Vec3::new(
-        v.x * cos_a - v.z * sin_a,
-        v.y,
-        v.x * sin_a + v.z * cos_a,
-    )
+    Vec3::new(v.x * cos_a - v.z * sin_a, v.y, v.x * sin_a + v.z * cos_a)
 }
 
 pub fn rotate_x(v: Vec3, cos_a: f32, sin_a: f32) -> Vec3 {
-    Vec3::new(
-        v.x,
-        v.y * cos_a - v.z * sin_a,
-        v.y * sin_a + v.z * cos_a,
-    )
+    Vec3::new(v.x, v.y * cos_a - v.z * sin_a, v.y * sin_a + v.z * cos_a)
 }
 
 /// Render a single frame into the framebuffer.
@@ -92,6 +84,9 @@ pub fn render_frame(
 }
 
 /// Render a single frame using the GPU compute pipeline.
+// Mirrors `render_frame`'s parameter set; a `RenderParams` struct is tracked as
+// follow-up cleanup (see issue #3).
+#[allow(clippy::too_many_arguments)]
 pub fn render_frame_gpu(
     fb: &mut Framebuffer,
     pipeline: &RasterPipeline,
@@ -147,6 +142,7 @@ pub fn framebuffer_to_string(fb: &Framebuffer) -> String {
 }
 
 /// Scanline triangle rasterizer matching voxcii's algorithm exactly.
+#[allow(clippy::too_many_arguments)]
 pub fn rasterize_triangle(
     fb: &mut Framebuffer,
     p0: Vec3,
@@ -165,7 +161,11 @@ pub fn rasterize_triangle(
     pts.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap());
 
     let tri_normal = (p1 - p0).cross(p2 - p0);
-    let nz = if tri_normal.z == 0.0 { 0.0001 } else { tri_normal.z };
+    let nz = if tri_normal.z == 0.0 {
+        0.0001
+    } else {
+        tri_normal.z
+    };
 
     let xi = pts[0].x + dx / 2.0;
     let xf = pts[2].x - dx / 2.0;
@@ -200,8 +200,8 @@ pub fn rasterize_triangle(
         for yy in y_start..=y_end {
             let y = (yy as f32 + 0.5) * dy;
 
-            let depth = pts[0].z
-                - (tri_normal.x * (x - pts[0].x) + tri_normal.y * (y - pts[0].y)) / nz;
+            let depth =
+                pts[0].z - (tri_normal.x * (x - pts[0].x) + tri_normal.y * (y - pts[0].y)) / nz;
 
             fb.set_pixel(xx as usize, yy as usize, depth, luminance, color);
         }
