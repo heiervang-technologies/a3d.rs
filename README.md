@@ -26,7 +26,8 @@ Inspired by [voxcii](https://github.com/ashish0kumar/voxcii), rebuilt from scrat
 ## Requirements
 
 - Rust 1.85+ (2024 edition)
-- A Vulkan-capable GPU and driver
+- A Vulkan-capable GPU with 64-bit atomic min/max (`VK_KHR_shader_atomic_int64`)
+  for GPU rendering; without it a3d transparently falls back to the CPU renderer
 - A terminal emulator
 
 ### Arch Linux
