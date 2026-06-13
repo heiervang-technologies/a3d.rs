@@ -95,3 +95,23 @@ fn load_stl(path: &Path) -> Mesh {
     mesh.normalize();
     mesh
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[should_panic(expected = "Unsupported model format")]
+    fn rejects_unknown_extension() {
+        load_model(Path::new("model.xyz"));
+    }
+
+    #[test]
+    #[should_panic(expected = "Failed to load OBJ")]
+    fn obj_extension_is_case_insensitive() {
+        // An uppercase `.OBJ` is routed to the OBJ loader (case-insensitive) and
+        // only then fails to open the missing file — proving recognition, not the
+        // "Unsupported model format" rejection a case-sensitive match would give.
+        load_model(Path::new("does-not-exist.OBJ"));
+    }
+}
