@@ -1,5 +1,9 @@
 name: Rust CI
 
+# Runs on the org's self-hosted runner: a3d.rs is private, and the org moved
+# private-repo CI off GitHub-hosted minutes (cloud/k8s/runners/README.md).
+# Labels are `self-hosted,linux,x64,k8s`, so [self-hosted, linux, x64] matches.
+
 on:
   push:
     branches: [ main ]
@@ -12,7 +16,7 @@ env:
 jobs:
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v4
 
@@ -54,29 +58,6 @@ jobs:
         run: cargo build --verbose
 
       # The GPU-dependent test (gpu_compare) skips itself when no adapter is
-      # present, so the suite is green on GPU-less CI runners.
+      # present, so the suite is green on a GPU-less runner.
       - name: Run tests
         run: cargo test --verbose -- --test-threads=1
-
-  build:
-    name: Build Release
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libssl-dev
-
-      - name: Build release
-        run: cargo build --release --verbose
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: a3d-linux-x86_64
-          path: target/release/a3d
