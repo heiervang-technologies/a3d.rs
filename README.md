@@ -6,6 +6,10 @@ Renders 3D models (OBJ, STL) as real-time ASCII art in your terminal, using wgpu
 
 Inspired by [voxcii](https://github.com/ashish0kumar/voxcii), rebuilt from scratch in Rust for memory safety, performance, and extensibility.
 
+![a3d rendering a spinning Stanford bunny as real-time ASCII 3D](assets/demo.gif)
+
+> Recorded with [VHS](https://github.com/charmbracelet/vhs) from `assets/demo.tape` — `a3d models/bunny.obj --color --fg 00ddff`.
+
 ## Features
 
 - Real-time 3D rendering with ASCII shading
