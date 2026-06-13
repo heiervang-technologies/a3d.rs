@@ -1,0 +1,20 @@
+version: 2
+updates:
+  # Rust dependencies — grouped into a single weekly PR to avoid churn.
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      cargo-deps:
+        patterns: ["*"]
+
+  # Keep the GitHub Actions pinned in the CI workflow current.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]

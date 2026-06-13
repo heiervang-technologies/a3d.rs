@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 description = "GPU-accelerated ASCII 3D rendering engine"
 license = "MIT"
+repository = "https://github.com/heiervang-technologies/a3d.rs"
+readme = "README.md"
+keywords = ["ascii", "3d", "renderer", "terminal", "gpu"]
+categories = ["command-line-utilities", "rendering"]
 
 [dependencies]
 wgpu = "24"
