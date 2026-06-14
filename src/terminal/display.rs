@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::io::{self, Stdout, Write};
 
 use crossterm::{
@@ -44,82 +45,10 @@ impl TerminalDisplay {
         bg: Option<[f32; 3]>,
         overlay: Option<&str>,
     ) -> io::Result<()> {
-        use std::fmt::Write;
-        // ~40 bytes per char worst case (fg + bg escape sequences)
-        let cap = if color {
-            fb.width * fb.height * 40 + fb.height * 10
-        } else {
-            fb.width * fb.height + fb.height * 10
-        };
-        let mut buf = String::with_capacity(cap);
-        buf.push_str("\x1b[H");
-
-        // Set background color once if specified
-        if let Some(bg) = bg {
-            let r = (bg[0] * 255.0) as u8;
-            let g = (bg[1] * 255.0) as u8;
-            let b = (bg[2] * 255.0) as u8;
-            write!(buf, "\x1b[48;2;{r};{g};{b}m").unwrap();
-        }
-
-        if color {
-            let mut prev_r: u8 = 0;
-            let mut prev_g: u8 = 0;
-            let mut prev_b: u8 = 0;
-            let mut has_fg = false;
-
-            for y in 0..fb.height {
-                for x in 0..fb.width {
-                    let idx = y * fb.width + x;
-                    let ch = fb.chars[idx];
-
-                    if ch == ' ' {
-                        if has_fg {
-                            buf.push_str("\x1b[39m");
-                            has_fg = false;
-                        }
-                        buf.push(' ');
-                    } else {
-                        let lum = fb.luminances[idx];
-                        let col = fb.colors[idx];
-                        let r = (col[0] * lum * 255.0).clamp(0.0, 255.0) as u8;
-                        let g = (col[1] * lum * 255.0).clamp(0.0, 255.0) as u8;
-                        let b = (col[2] * lum * 255.0).clamp(0.0, 255.0) as u8;
-
-                        if !has_fg || r != prev_r || g != prev_g || b != prev_b {
-                            write!(buf, "\x1b[38;2;{r};{g};{b}m").unwrap();
-                            prev_r = r;
-                            prev_g = g;
-                            prev_b = b;
-                            has_fg = true;
-                        }
-                        buf.push(ch);
-                    }
-                }
-                if y < fb.height - 1 {
-                    buf.push_str("\r\n");
-                }
-            }
-            if has_fg {
-                buf.push_str("\x1b[39m");
-            }
-        } else {
-            for y in 0..fb.height {
-                for x in 0..fb.width {
-                    buf.push(fb.chars[y * fb.width + x]);
-                }
-                if y < fb.height - 1 {
-                    buf.push_str("\r\n");
-                }
-            }
-        }
-        // Overlay text in top-right corner (e.g. FPS counter)
-        if let Some(text) = overlay {
-            let (term_w, _) = terminal::size().unwrap_or((fb.width as u16, 0));
-            let col = (term_w as usize).saturating_sub(text.len()) + 1;
-            write!(buf, "\x1b[0m\x1b[1;{col}H{text}").unwrap();
-        }
-
+        let term_width = terminal::size()
+            .map(|(w, _)| w as usize)
+            .unwrap_or(fb.width);
+        let buf = frame_to_ansi(fb, color, bg, overlay, term_width);
         self.stdout.write_all(buf.as_bytes())?;
         self.stdout.flush()
     }
@@ -148,11 +77,152 @@ impl TerminalDisplay {
     }
 }
 
+/// Build the full ANSI frame: cursor-home, optional background, the character
+/// grid (with per-cell 24-bit foreground in color mode), then an optional
+/// top-right overlay. Kept pure and terminal-width-parameterized so the
+/// escape-sequence logic can be unit-tested without a TTY.
+pub(crate) fn frame_to_ansi(
+    fb: &Framebuffer,
+    color: bool,
+    bg: Option<[f32; 3]>,
+    overlay: Option<&str>,
+    term_width: usize,
+) -> String {
+    // ~40 bytes per char worst case (fg + bg escape sequences)
+    let cap = if color {
+        fb.width * fb.height * 40 + fb.height * 10
+    } else {
+        fb.width * fb.height + fb.height * 10
+    };
+    let mut buf = String::with_capacity(cap);
+    buf.push_str("\x1b[H");
+
+    // Set background color once if specified
+    if let Some(bg) = bg {
+        let r = (bg[0] * 255.0) as u8;
+        let g = (bg[1] * 255.0) as u8;
+        let b = (bg[2] * 255.0) as u8;
+        write!(buf, "\x1b[48;2;{r};{g};{b}m").unwrap();
+    }
+
+    if color {
+        let mut prev_r: u8 = 0;
+        let mut prev_g: u8 = 0;
+        let mut prev_b: u8 = 0;
+        let mut has_fg = false;
+
+        for y in 0..fb.height {
+            for x in 0..fb.width {
+                let idx = y * fb.width + x;
+                let ch = fb.chars[idx];
+
+                if ch == ' ' {
+                    if has_fg {
+                        buf.push_str("\x1b[39m");
+                        has_fg = false;
+                    }
+                    buf.push(' ');
+                } else {
+                    let lum = fb.luminances[idx];
+                    let col = fb.colors[idx];
+                    let r = (col[0] * lum * 255.0).clamp(0.0, 255.0) as u8;
+                    let g = (col[1] * lum * 255.0).clamp(0.0, 255.0) as u8;
+                    let b = (col[2] * lum * 255.0).clamp(0.0, 255.0) as u8;
+
+                    if !has_fg || r != prev_r || g != prev_g || b != prev_b {
+                        write!(buf, "\x1b[38;2;{r};{g};{b}m").unwrap();
+                        prev_r = r;
+                        prev_g = g;
+                        prev_b = b;
+                        has_fg = true;
+                    }
+                    buf.push(ch);
+                }
+            }
+            if y < fb.height - 1 {
+                buf.push_str("\r\n");
+            }
+        }
+        if has_fg {
+            buf.push_str("\x1b[39m");
+        }
+    } else {
+        for y in 0..fb.height {
+            for x in 0..fb.width {
+                buf.push(fb.chars[y * fb.width + x]);
+            }
+            if y < fb.height - 1 {
+                buf.push_str("\r\n");
+            }
+        }
+    }
+
+    // Overlay text in top-right corner (e.g. FPS counter)
+    if let Some(text) = overlay {
+        let col = term_width.saturating_sub(text.len()) + 1;
+        write!(buf, "\x1b[0m\x1b[1;{col}H{text}").unwrap();
+    }
+
+    buf
+}
+
 impl Drop for TerminalDisplay {
     fn drop(&mut self) {
         let _ = self.stdout.execute(DisableMouseCapture);
         let _ = self.stdout.execute(cursor::Show);
         let _ = self.stdout.execute(terminal::LeaveAlternateScreen);
         let _ = terminal::disable_raw_mode();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::frame_to_ansi;
+    use crate::render::Framebuffer;
+
+    #[test]
+    fn plain_frame_homes_cursor_and_has_no_color_escapes() {
+        let fb = Framebuffer::new(2, 2);
+        let out = frame_to_ansi(&fb, false, None, None, 80);
+        assert!(out.starts_with("\x1b[H"));
+        assert!(out.contains("\r\n"), "rows should be separated by CRLF");
+        assert!(
+            !out.contains("\x1b[38;2;"),
+            "plain mode must not emit fg escapes"
+        );
+    }
+
+    #[test]
+    fn color_mode_dedups_fg_and_resets_on_space() {
+        let mut fb = Framebuffer::new(3, 1);
+        // Two adjacent cells of the same color, then a trailing space.
+        fb.set_pixel(0, 0, 0.0, 1.0, [1.0, 1.0, 1.0]);
+        fb.set_pixel(1, 0, 0.0, 1.0, [1.0, 1.0, 1.0]);
+        let out = frame_to_ansi(&fb, true, None, None, 80);
+        assert_eq!(
+            out.matches("\x1b[38;2;").count(),
+            1,
+            "adjacent same-color cells should share one fg escape: {out:?}"
+        );
+        assert!(
+            out.contains("\x1b[39m"),
+            "fg should reset before the space: {out:?}"
+        );
+    }
+
+    #[test]
+    fn background_escape_emitted_once() {
+        let fb = Framebuffer::new(2, 1);
+        let out = frame_to_ansi(&fb, false, Some([0.1, 0.2, 0.3]), None, 80);
+        assert_eq!(out.matches("\x1b[48;2;").count(), 1);
+    }
+
+    #[test]
+    fn overlay_is_positioned_at_right_edge() {
+        let fb = Framebuffer::new(2, 1);
+        let out = frame_to_ansi(&fb, false, None, Some("FPS"), 80);
+        assert!(out.contains("FPS"));
+        // col = term_width - text.len() + 1 = 80 - 3 + 1 = 78
+        assert!(out.contains("\x1b[1;78H"), "overlay mispositioned: {out:?}");
     }
 }
