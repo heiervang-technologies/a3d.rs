@@ -199,3 +199,40 @@ fn main() {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_six_hex_digits() {
+        let c = parse_hex_color("ff6600").unwrap();
+        assert!((c[0] - 1.0).abs() < 1e-6);
+        assert!((c[1] - 102.0 / 255.0).abs() < 1e-6);
+        assert!((c[2] - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn leading_hash_is_optional() {
+        assert_eq!(parse_hex_color("#1a2b3c"), parse_hex_color("1a2b3c"));
+    }
+
+    #[test]
+    fn endpoints() {
+        assert_eq!(parse_hex_color("000000").unwrap(), [0.0, 0.0, 0.0]);
+        assert_eq!(parse_hex_color("ffffff").unwrap(), [1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn rejects_wrong_length() {
+        assert!(parse_hex_color("fff").is_err());
+        assert!(parse_hex_color("ff66000").is_err());
+        assert!(parse_hex_color("").is_err());
+    }
+
+    #[test]
+    fn rejects_non_hex() {
+        assert!(parse_hex_color("gggggg").is_err());
+        assert!(parse_hex_color("12345z").is_err());
+    }
+}
