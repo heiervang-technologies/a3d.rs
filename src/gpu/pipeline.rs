@@ -215,7 +215,7 @@ impl RasterPipeline {
 
         let depth_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("depth buffer"),
-            size: pixel_count * 4,
+            size: pixel_count * 8, // atomic<u64> per pixel: depth<<32 | tri index
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -342,7 +342,7 @@ impl RasterPipeline {
 
         self.depth_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("depth buffer"),
-            size: pixel_count * 4,
+            size: pixel_count * 8, // atomic<u64> per pixel
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -443,8 +443,9 @@ impl RasterPipeline {
         // Write uniforms
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(uniforms));
 
-        // Clear depth buffer to 0xFFFFFFFF
-        let clear_depth: Vec<u32> = vec![0xFFFF_FFFFu32; pixel_count];
+        // Clear depth buffer to u64::MAX (no triangle has index 0xFFFFFFFF, so
+        // unwritten pixels never match a real triangle in the shade pass).
+        let clear_depth: Vec<u64> = vec![u64::MAX; pixel_count];
         queue.write_buffer(&self.depth_buffer, 0, bytemuck::cast_slice(&clear_depth));
 
         // Clear output char to space (32)

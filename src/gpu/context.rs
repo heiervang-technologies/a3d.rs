@@ -19,11 +19,25 @@ impl GpuContext {
             })
             .await?;
 
+        // The rasterizer resolves depth with a 64-bit atomicMin that packs
+        // (depth << 32 | triangle_index), so the per-pixel winner is unique and
+        // the shade pass never has to recompute/compare depth. That needs
+        // 64-bit integer atomics; adapters without them fall back to the CPU
+        // renderer (which is always available).
+        let needed = wgpu::Features::SHADER_INT64 | wgpu::Features::SHADER_INT64_ATOMIC_MIN_MAX;
+        if !adapter.features().contains(needed) {
+            log::info!(
+                "GPU {} lacks 64-bit atomic min/max; using CPU renderer",
+                adapter.get_info().name
+            );
+            return None;
+        }
+
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: Some("a3d device"),
-                    required_features: wgpu::Features::empty(),
+                    required_features: needed,
                     required_limits: wgpu::Limits::default(),
                     memory_hints: wgpu::MemoryHints::Performance,
                 },

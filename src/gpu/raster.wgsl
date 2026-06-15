@@ -27,7 +27,9 @@ struct Uniforms {
 @group(0) @binding(1) var<storage, read> vertex_data: array<f32>;
 @group(0) @binding(2) var<storage, read> indices: array<u32>;
 @group(0) @binding(3) var<storage, read_write> transformed: array<vec4<f32>>;
-@group(0) @binding(4) var<storage, read_write> depth_buf: array<atomic<u32>>;
+// Packs (pack_depth(z) << 32 | triangle_index) so a single atomicMin selects a
+// unique winner per pixel: smallest depth wins, ties broken by smallest index.
+@group(0) @binding(4) var<storage, read_write> depth_buf: array<atomic<u64>>;
 @group(0) @binding(5) var<storage, read_write> output_char: array<u32>;
 @group(0) @binding(6) var<storage, read_write> output_luminance: array<f32>;
 @group(0) @binding(7) var<storage, read_write> output_color: array<f32>;
@@ -186,7 +188,10 @@ fn rasterize_depth(@builtin(global_invocation_id) gid: vec3<u32>) {
             let depth = pts[0].z - (tri_normal.x * (x - pts[0].x) + tri_normal.y * (y - pts[0].y)) / nz;
 
             let pixel_idx = u32(yy) * u.width + u32(xx);
-            let packed = pack_depth(depth);
+            // High 32 bits = depth (so atomicMin orders by depth first), low 32
+            // bits = triangle index (a deterministic tie-break, and the key the
+            // shade pass matches on).
+            let packed = (u64(pack_depth(depth)) << 32u) | u64(tri_idx);
             atomicMin(&depth_buf[pixel_idx], packed);
         }
     }
@@ -234,12 +239,6 @@ fn rasterize_shade(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     let pts = sort3_by_x(s0, s1, s2);
 
-    let tri_normal = cross(s1 - s0, s2 - s0);
-    var nz = tri_normal.z;
-    if (nz == 0.0) {
-        nz = 0.0001;
-    }
-
     let xi = pts[0].x + u.dx / 2.0;
     let xf = pts[2].x - u.dx / 2.0;
 
@@ -264,15 +263,12 @@ fn rasterize_shade(@builtin(global_invocation_id) gid: vec3<u32>) {
         let y_end = min(i32((yf - u.dy / 2.0) / u.dy), i32(u.height) - 1);
 
         for (var yy: i32 = y_start; yy <= y_end; yy++) {
-            let y = (f32(yy) + 0.5) * u.dy;
-
-            let depth = pts[0].z - (tri_normal.x * (x - pts[0].x) + tri_normal.y * (y - pts[0].y)) / nz;
-
             let pixel_idx = u32(yy) * u.width + u32(xx);
-            let packed = pack_depth(depth);
-            let current = atomicLoad(&depth_buf[pixel_idx]);
-
-            if (packed == current) {
+            // This triangle owns the pixel iff it was the atomicMin winner,
+            // matched by index (low 32 bits) — no depth recompute, so the
+            // fragile float-equality check (and its dropped pixels) is gone.
+            let winner = atomicLoad(&depth_buf[pixel_idx]);
+            if ((winner & 0xFFFFFFFFlu) == u64(tri_idx)) {
                 output_char[pixel_idx] = luminance_to_ascii(luminance);
                 output_luminance[pixel_idx] = luminance;
                 output_color[pixel_idx * 3u] = tri_color.x;
