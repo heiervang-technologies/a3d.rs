@@ -9,6 +9,7 @@ pub struct Vertex {
     pub color: [f32; 3],
 }
 
+#[derive(Debug)]
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,

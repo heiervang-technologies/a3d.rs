@@ -2,7 +2,12 @@ use std::path::Path;
 
 use super::mesh::{Mesh, Vertex};
 
-pub fn load_model(path: &Path) -> Mesh {
+/// Load an OBJ or STL model from `path`, normalized to the unit sphere.
+///
+/// Returns a human-readable error rather than panicking when the path has an
+/// unknown extension or the file is missing or malformed — model files are
+/// untrusted input (see `SECURITY.md`), so callers should surface the error.
+pub fn load_model(path: &Path) -> Result<Mesh, String> {
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -10,11 +15,14 @@ pub fn load_model(path: &Path) -> Mesh {
     match ext.as_deref() {
         Some("obj") => load_obj(path),
         Some("stl") => load_stl(path),
-        _ => panic!("Unsupported model format: {}", path.display()),
+        _ => Err(format!(
+            "unsupported model format: {} (expected .obj or .stl)",
+            path.display()
+        )),
     }
 }
 
-fn load_obj(path: &Path) -> Mesh {
+fn load_obj(path: &Path) -> Result<Mesh, String> {
     let (models, materials) = tobj::load_obj(
         path,
         &tobj::LoadOptions {
@@ -23,7 +31,7 @@ fn load_obj(path: &Path) -> Mesh {
             ..Default::default()
         },
     )
-    .expect("Failed to load OBJ");
+    .map_err(|e| format!("failed to load OBJ {}: {e}", path.display()))?;
 
     let materials = materials.unwrap_or_default();
     let mut vertices = Vec::new();
@@ -64,13 +72,15 @@ fn load_obj(path: &Path) -> Mesh {
 
     let mut mesh = Mesh { vertices, indices };
     mesh.normalize();
-    mesh
+    Ok(mesh)
 }
 
-fn load_stl(path: &Path) -> Mesh {
-    let file = std::fs::File::open(path).expect("Failed to open STL file");
+fn load_stl(path: &Path) -> Result<Mesh, String> {
+    let file =
+        std::fs::File::open(path).map_err(|e| format!("failed to open {}: {e}", path.display()))?;
     let mut reader = std::io::BufReader::new(file);
-    let stl = stl_io::read_stl(&mut reader).expect("Failed to parse STL");
+    let stl = stl_io::read_stl(&mut reader)
+        .map_err(|e| format!("failed to parse STL {}: {e}", path.display()))?;
 
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
@@ -93,7 +103,7 @@ fn load_stl(path: &Path) -> Mesh {
 
     let mut mesh = Mesh { vertices, indices };
     mesh.normalize();
-    mesh
+    Ok(mesh)
 }
 
 #[cfg(test)]
@@ -101,17 +111,29 @@ mod tests {
     use super::*;
 
     #[test]
-    #[should_panic(expected = "Unsupported model format")]
     fn rejects_unknown_extension() {
-        load_model(Path::new("model.xyz"));
+        let err = load_model(Path::new("model.xyz")).unwrap_err();
+        assert!(
+            err.contains("unsupported model format"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
-    #[should_panic(expected = "Failed to load OBJ")]
     fn obj_extension_is_case_insensitive() {
         // An uppercase `.OBJ` is routed to the OBJ loader (case-insensitive) and
-        // only then fails to open the missing file — proving recognition, not the
-        // "Unsupported model format" rejection a case-sensitive match would give.
-        load_model(Path::new("does-not-exist.OBJ"));
+        // only then fails to load the missing file — proving recognition, not the
+        // "unsupported model format" rejection a case-sensitive match would give.
+        let err = load_model(Path::new("does-not-exist.OBJ")).unwrap_err();
+        assert!(
+            err.contains("failed to load OBJ"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn missing_stl_is_an_error_not_a_panic() {
+        let err = load_model(Path::new("does-not-exist.stl")).unwrap_err();
+        assert!(err.contains("failed to open"), "unexpected error: {err}");
     }
 }

@@ -179,16 +179,31 @@ impl RasterPipeline {
         let rasterize_depth_pipeline = create_pipeline("rasterize_depth", "rasterize depth");
         let rasterize_shade_pipeline = create_pipeline("rasterize_shade", "rasterize shade");
 
-        // Upload mesh data
+        // Upload mesh data. wgpu rejects zero-sized storage buffers, so an empty
+        // mesh (e.g. a model file with no geometry) would otherwise panic the
+        // pipeline. The dispatch counts below are 0 for an empty mesh, so no work
+        // runs regardless; a 4-byte stub just keeps the bindings valid and yields
+        // a blank frame instead of a crash.
+        const EMPTY_STORAGE_STUB: &[u8] = &[0u8; 4];
+        let vertex_bytes = bytemuck::cast_slice(&mesh.vertices);
+        let index_bytes = bytemuck::cast_slice(&mesh.indices);
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("vertex buffer"),
-            contents: bytemuck::cast_slice(&mesh.vertices),
+            contents: if vertex_bytes.is_empty() {
+                EMPTY_STORAGE_STUB
+            } else {
+                vertex_bytes
+            },
             usage: wgpu::BufferUsages::STORAGE,
         });
 
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("index buffer"),
-            contents: bytemuck::cast_slice(&mesh.indices),
+            contents: if index_bytes.is_empty() {
+                EMPTY_STORAGE_STUB
+            } else {
+                index_bytes
+            },
             usage: wgpu::BufferUsages::STORAGE,
         });
 
@@ -208,7 +223,7 @@ impl RasterPipeline {
 
         let transformed_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("transformed buffer"),
-            size: num_vertices as u64 * 16, // vec4<f32> per vertex
+            size: (num_vertices as u64 * 16).max(16), // vec4<f32> per vertex (min 1 for empty meshes)
             usage: wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });

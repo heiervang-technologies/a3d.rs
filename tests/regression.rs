@@ -17,7 +17,7 @@ fn render_snapshot(
     altitude: f32,
     zoom: f32,
 ) -> String {
-    let mesh = load_model(Path::new(model_path));
+    let mesh = load_model(Path::new(model_path)).expect("model should load");
     let mut fb = Framebuffer::new(width, height);
     render_frame(&mut fb, &mesh, azimuth, altitude, zoom, LIGHT_DIR, None);
     framebuffer_to_string(&fb)

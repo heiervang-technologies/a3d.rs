@@ -20,7 +20,7 @@ struct Args {
     model: PathBuf,
 
     /// Target frames per second
-    #[arg(short, long, default_value_t = 30)]
+    #[arg(short, long, default_value_t = 30, value_parser = clap::value_parser!(u32).range(1..))]
     fps: u32,
 
     /// Interactive rotation mode
@@ -68,7 +68,13 @@ fn main() {
     let args = Args::parse();
 
     // Load model
-    let mesh = load_model(&args.model);
+    let mesh = match load_model(&args.model) {
+        Ok(mesh) => mesh,
+        Err(e) => {
+            eprintln!("error: {e}");
+            std::process::exit(1);
+        }
+    };
     log::info!(
         "Loaded {} vertices, {} indices",
         mesh.vertices.len(),

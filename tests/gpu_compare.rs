@@ -18,7 +18,7 @@ const H: usize = 24;
 /// Returns `None` when no GPU adapter is available, so callers can skip
 /// gracefully on GPU-less CI runners instead of failing the suite.
 fn compare(model: &str, az: f32, al: f32, zoom: f32) -> Option<(String, String, f64)> {
-    let mesh = load_model(Path::new(model));
+    let mesh = load_model(Path::new(model)).expect("model should load");
 
     let mut cpu_fb = Framebuffer::new(W, H);
     render_frame(&mut cpu_fb, &mesh, az, al, zoom, LIGHT_DIR, None);
