@@ -150,6 +150,16 @@ fn rasterize_depth(@builtin(global_invocation_id) gid: vec3<u32>) {
         return;
     }
 
+    // Skip degenerate triangles, exactly as the shade pass and the CPU
+    // rasterizer do. Otherwise a sliver could win the depth atomicMin and
+    // occlude real geometry behind it, yet never be shaded — leaving a hole.
+    let dr0 = rotate_x(rotate_y(vertex_position(i0)));
+    let dr1 = rotate_x(rotate_y(vertex_position(i1)));
+    let dr2 = rotate_x(rotate_y(vertex_position(i2)));
+    if (length(cross(dr1 - dr0, dr2 - dr0)) < 1e-5) {
+        return;
+    }
+
     let pts = sort3_by_x(s0, s1, s2);
 
     // Triangle plane normal for Z interpolation
