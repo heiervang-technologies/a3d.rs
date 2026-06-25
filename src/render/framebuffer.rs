@@ -1,16 +1,26 @@
 use super::ascii::luminance_to_char;
 
 /// CPU-side framebuffer holding depth and ASCII characters.
+///
+/// All grids are row-major and `width * height` long; index a cell as
+/// `y * width + x`.
 pub struct Framebuffer {
+    /// Width in character cells.
     pub width: usize,
+    /// Height in character cells.
     pub height: usize,
+    /// Per-cell depth (z-buffer); nearer is smaller, cleared to `+∞`.
     pub depth: Vec<f32>,
+    /// Per-cell ASCII character, cleared to a space.
     pub chars: Vec<char>,
+    /// Per-cell linear RGB color in `[0, 1]`.
     pub colors: Vec<[f32; 3]>,
+    /// Per-cell luminance in `[0, 1]` (used for color-mode shading).
     pub luminances: Vec<f32>,
 }
 
 impl Framebuffer {
+    /// Create a `width`×`height` framebuffer cleared to empty (depth `+∞`, spaces).
     pub fn new(width: usize, height: usize) -> Self {
         let size = width * height;
         Self {
@@ -23,6 +33,7 @@ impl Framebuffer {
         }
     }
 
+    /// Reset every cell to empty (depth `+∞`, space, black, zero luminance).
     pub fn clear(&mut self) {
         self.depth.fill(f32::INFINITY);
         self.chars.fill(' ');
@@ -30,6 +41,8 @@ impl Framebuffer {
         self.luminances.fill(0.0);
     }
 
+    /// Depth-test and write a fragment: updates cell `(x, y)` only if `z` is
+    /// nearer than the stored depth. Out-of-bounds coordinates are ignored.
     pub fn set_pixel(&mut self, x: usize, y: usize, z: f32, luminance: f32, color: [f32; 3]) {
         if x >= self.width || y >= self.height {
             return;
@@ -43,6 +56,7 @@ impl Framebuffer {
         }
     }
 
+    /// Resize to `width`×`height` and clear. Call when the terminal size changes.
     pub fn resize(&mut self, width: usize, height: usize) {
         self.width = width;
         self.height = height;

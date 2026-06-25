@@ -5,9 +5,11 @@ use super::GpuContext;
 use crate::model::Mesh;
 use crate::render::Framebuffer;
 
+/// GPU uniform buffer layout (`std140`-compatible). Internal to the crate —
+/// callers use [`render_frame_gpu`](crate::render_frame_gpu), which builds this.
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-pub struct GpuUniforms {
+pub(crate) struct GpuUniforms {
     pub width: u32,
     pub height: u32,
     pub cos_az: f32,
@@ -55,6 +57,9 @@ pub struct RasterPipeline {
 }
 
 impl RasterPipeline {
+    /// Build a pipeline for `mesh` rendering into a `width`×`height` framebuffer.
+    /// Uploads the mesh once; reuse the pipeline across frames and call
+    /// [`resize`](Self::resize) when the terminal size changes.
     pub fn new(ctx: &GpuContext, mesh: &Mesh, width: u32, height: u32) -> Self {
         let device = &ctx.device;
 
@@ -450,7 +455,9 @@ impl RasterPipeline {
     }
 
     /// Render a frame on the GPU and read results back into the framebuffer.
-    pub fn render(&self, ctx: &GpuContext, fb: &mut Framebuffer, uniforms: &GpuUniforms) {
+    /// Run the 3 compute passes and read the result back into `fb`. Internal —
+    /// callers use [`render_frame_gpu`](crate::render_frame_gpu).
+    pub(crate) fn render(&self, ctx: &GpuContext, fb: &mut Framebuffer, uniforms: &GpuUniforms) {
         let device = &ctx.device;
         let queue = &ctx.queue;
         let pixel_count = (self.fb_width * self.fb_height) as usize;

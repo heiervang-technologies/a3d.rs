@@ -1,22 +1,58 @@
+//! # a3d
+//!
+//! A GPU-accelerated ASCII 3D rendering engine: it loads OBJ/STL meshes and
+//! rasterizes them to ASCII art, either on the GPU (a wgpu compute pipeline) or
+//! on an equivalent CPU scanline rasterizer.
+//!
+//! The crate ships both the `a3d` terminal binary and this library. The library
+//! is renderer-only and TTY-free, so it can be driven headlessly (the test suite
+//! does exactly this). A minimal CPU render:
+//!
+//! ```no_run
+//! use std::path::Path;
+//! use glam::Vec3;
+//! use a3d::model::load_model;
+//! use a3d::render::Framebuffer;
+//! use a3d::{render_frame, framebuffer_to_string};
+//!
+//! let mesh = load_model(Path::new("models/dog.stl")).expect("load model");
+//! let mut fb = Framebuffer::new(80, 24);
+//! let light = Vec3::new(1.0, -1.0, 0.0).normalize();
+//! render_frame(&mut fb, &mesh, 0.0, 0.0, 1.0, light, None);
+//! print!("{}", framebuffer_to_string(&fb));
+//! ```
+//!
+//! For GPU rendering see [`GpuContext`] and [`render_frame_gpu`]; the GPU and CPU
+//! paths are kept byte-for-byte identical (asserted by `tests/gpu_compare.rs`).
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 
+/// GPU compute rasterizer: wgpu device setup and the 3-pass pipeline.
 pub mod gpu;
+/// Mesh types and OBJ/STL loading.
 pub mod model;
+/// CPU framebuffer, ASCII luminance mapping, and camera.
 pub mod render;
+/// Terminal display and keyboard/mouse input (crossterm).
 pub mod terminal;
 
 use glam::Vec3;
 use gpu::{GpuContext, GpuUniforms, RasterPipeline};
 use render::Framebuffer;
 
+/// The golden ratio φ, used to make the auto-rotation oscillation non-repeating.
 pub const GOLDEN_RATIO: f32 = 1.618_034;
+/// Auto-rotation azimuth speed (radians per second of elapsed time).
 pub const AZ_SPEED: f32 = 2.0;
+/// Auto-rotation altitude speed, offset by the golden ratio for smooth drift.
 pub const AL_SPEED: f32 = GOLDEN_RATIO * 0.25;
 
+/// Rotate `v` about the Y axis, given the precomputed cosine and sine of the angle.
 pub fn rotate_y(v: Vec3, cos_a: f32, sin_a: f32) -> Vec3 {
     Vec3::new(v.x * cos_a - v.z * sin_a, v.y, v.x * sin_a + v.z * cos_a)
 }
 
+/// Rotate `v` about the X axis, given the precomputed cosine and sine of the angle.
 pub fn rotate_x(v: Vec3, cos_a: f32, sin_a: f32) -> Vec3 {
     Vec3::new(v.x, v.y * cos_a - v.z * sin_a, v.y * sin_a + v.z * cos_a)
 }
