@@ -22,6 +22,24 @@ pub fn load_model(path: &Path) -> Result<Mesh, String> {
     }
 }
 
+/// Reject a mesh with NaN/infinite vertex coordinates. A single non-finite
+/// coordinate makes the bounding box infinite, so normalization turns *every*
+/// vertex into NaN (`inf - inf`) and the model silently renders blank. Better to
+/// surface it as a load error — model files are untrusted input.
+fn reject_non_finite(mesh: &Mesh, path: &Path) -> Result<(), String> {
+    if mesh
+        .vertices
+        .iter()
+        .any(|v| !v.position.iter().all(|c| c.is_finite()))
+    {
+        return Err(format!(
+            "{}: model has non-finite vertex coordinates (NaN or infinity)",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
 fn load_obj(path: &Path) -> Result<Mesh, String> {
     let (models, materials) = tobj::load_obj(
         path,
@@ -71,6 +89,7 @@ fn load_obj(path: &Path) -> Result<Mesh, String> {
     }
 
     let mut mesh = Mesh { vertices, indices };
+    reject_non_finite(&mesh, path)?;
     mesh.normalize();
     Ok(mesh)
 }
@@ -102,6 +121,7 @@ fn load_stl(path: &Path) -> Result<Mesh, String> {
     }
 
     let mut mesh = Mesh { vertices, indices };
+    reject_non_finite(&mesh, path)?;
     mesh.normalize();
     Ok(mesh)
 }
@@ -135,5 +155,18 @@ mod tests {
     fn missing_stl_is_an_error_not_a_panic() {
         let err = load_model(Path::new("does-not-exist.stl")).unwrap_err();
         assert!(err.contains("failed to open"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn rejects_non_finite_coordinates() {
+        // tobj parses "inf" as f32::INFINITY. Without the guard, normalization
+        // would spread NaN across the whole mesh and render blank; instead the
+        // load must fail cleanly.
+        let path = std::env::temp_dir().join("a3d_nonfinite_test.obj");
+        std::fs::write(&path, "v inf 0 0\nv 0 1 0\nv 1 0 0\nf 1 2 3\n").unwrap();
+        let result = load_model(&path);
+        let _ = std::fs::remove_file(&path);
+        let err = result.unwrap_err();
+        assert!(err.contains("non-finite"), "unexpected error: {err}");
     }
 }
