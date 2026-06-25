@@ -1,4 +1,4 @@
-# Demo recording for a3d — a spinning Stanford bunny rendered as ASCII 3D.
+# Demo recording for a3d — a spinning dog model rendered as ASCII 3D.
 # Regenerate with: vhs assets/demo.tape   (run from the repo root)
 Output assets/demo.gif
 
@@ -10,7 +10,7 @@ Set Padding 12
 Set Framerate 24
 Set PlaybackSpeed 1.0
 
-Type "a3d models/bunny.obj --color --fg 00ddff --fps 30"
+Type "a3d models/dog.stl --color --fg 00ddff --fps 30"
 Sleep 700ms
 Enter
 Sleep 8s

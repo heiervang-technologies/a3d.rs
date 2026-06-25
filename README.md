@@ -1,14 +1,17 @@
 # a3d
 
+[![Rust CI](https://github.com/heiervang-technologies/a3d.rs/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/heiervang-technologies/a3d.rs/actions/workflows/rust-ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 GPU-accelerated ASCII 3D rendering engine written in Rust.
 
 Renders 3D models (OBJ, STL) as real-time ASCII art in your terminal, using wgpu compute shaders (Vulkan) for rasterization and glam for SIMD-accelerated math.
 
 Inspired by [voxcii](https://github.com/ashish0kumar/voxcii), rebuilt from scratch in Rust for memory safety, performance, and extensibility.
 
-![a3d rendering a spinning Stanford bunny as real-time ASCII 3D](assets/demo.gif)
+![a3d rendering a spinning dog model as real-time ASCII 3D](assets/demo.gif)
 
-> Recorded with [VHS](https://github.com/charmbracelet/vhs) from `assets/demo.tape` — `a3d models/bunny.obj --color --fg 00ddff`.
+> Recorded with [VHS](https://github.com/charmbracelet/vhs) from `assets/demo.tape` — `a3d models/dog.stl --color --fg 00ddff`.
 
 ## Features
 
@@ -207,6 +210,19 @@ See [Issue #1](https://github.com/heiervang-technologies/a3d.rs/issues/1) for th
 - **M5:** Performance and polish
 - **M6:** Extensions (WASM, export, plugins)
 
+## Acknowledgements
+
+- Inspired by [voxcii](https://github.com/ashish0kumar/voxcii) by ashish0kumar.
+- The bundled sample mesh `models/dog.stl` is the author's own model. See
+  [`models/README.md`](models/README.md) for details.
+
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Security
+issues: please follow [SECURITY.md](SECURITY.md).
+
 ## License
 
-MIT
+a3d is licensed under the [MIT License](LICENSE). This covers both the source
+code and the bundled sample model (`models/dog.stl`), which is the author's own
+work — see [`models/README.md`](models/README.md).

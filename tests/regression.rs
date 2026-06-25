@@ -24,41 +24,21 @@ fn render_snapshot(
 }
 
 #[test]
-fn bunny_80x24_snapshot() {
-    let output = render_snapshot("models/bunny.obj", 80, 24, 0.0, 0.0, 1.0);
-    let expected = include_str!("snapshots/bunny_80x24.txt");
+fn dog_80x24_snapshot() {
+    let output = render_snapshot("models/dog.stl", 80, 24, 0.0, 0.0, 1.0);
+    let expected = include_str!("snapshots/dog_80x24.txt");
     assert_eq!(
         output, expected,
-        "Bunny 80x24 snapshot mismatch — rendering has regressed"
+        "Dog 80x24 snapshot mismatch — rendering has regressed"
     );
 }
 
 #[test]
-fn bunny_80x24_rotated_snapshot() {
-    let output = render_snapshot("models/bunny.obj", 80, 24, 1.0, 0.3, 1.0);
-    let expected = include_str!("snapshots/bunny_80x24_rotated.txt");
+fn dog_80x24_rotated_snapshot() {
+    let output = render_snapshot("models/dog.stl", 80, 24, 1.0, 0.3, 1.0);
+    let expected = include_str!("snapshots/dog_80x24_rotated.txt");
     assert_eq!(
         output, expected,
-        "Bunny 80x24 rotated snapshot mismatch — rendering has regressed"
-    );
-}
-
-#[test]
-fn cow_80x24_snapshot() {
-    let output = render_snapshot("models/cow.obj", 80, 24, 0.0, 0.0, 1.0);
-    let expected = include_str!("snapshots/cow_80x24.txt");
-    assert_eq!(
-        output, expected,
-        "Cow 80x24 snapshot mismatch — rendering has regressed"
-    );
-}
-
-#[test]
-fn teapot_80x24_snapshot() {
-    let output = render_snapshot("models/teapot.obj", 80, 24, 0.0, 0.0, 1.0);
-    let expected = include_str!("snapshots/teapot_80x24.txt");
-    assert_eq!(
-        output, expected,
-        "Teapot 80x24 snapshot mismatch — rendering has regressed"
+        "Dog 80x24 rotated snapshot mismatch — rendering has regressed"
     );
 }

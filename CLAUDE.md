@@ -42,4 +42,6 @@ Tracked in GitHub Issue #1. M1 (core rendering) and M2 (GPU compute pipeline) ar
 
 ## Test Models
 
-Sample OBJ files from upstream voxcii repo at `~/ht/forks/ht-voxcii/models/` (bunny, cow, teapot, dragon).
+The bundled sample mesh is `models/dog.stl` (the author's own Meshy-generated
+model, MIT-licensed with the repo). See `models/README.md`. Tests and the demo
+default to it; the engine works with any OBJ/STL file.
