@@ -37,6 +37,8 @@ cargo test --test gen_snapshots -- --ignored
 
 - **Rust 2024 edition**, MSRV 1.85.
 - **No `unsafe`** — both crate roots are `#![forbid(unsafe_code)]`; keep it that way.
+- **Document public items** — the library is `#![warn(missing_docs)]` and CI's
+  `clippy -D warnings` fails on any undocumented public API.
 - Use **`glam`** for vector/matrix math and **`bytemuck`** for GPU buffer data.
 - **Conventional commit** messages (`feat:`, `fix:`, `refactor:`, `test:`, `chore:`, `docs:`).
 - Keep PRs focused; add or update tests for behavior changes.
