@@ -558,7 +558,7 @@ impl RasterPipeline {
         color_slice.map_async(wgpu::MapMode::Read, move |r| {
             let _ = tx_k.send(r);
         });
-        device.poll(wgpu::Maintain::Wait);
+        device.poll(wgpu::PollType::Wait).unwrap();
         rx_c.recv().unwrap().unwrap();
         rx_l.recv().unwrap().unwrap();
         rx_k.recv().unwrap().unwrap();
