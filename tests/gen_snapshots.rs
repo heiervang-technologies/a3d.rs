@@ -6,7 +6,7 @@ use glam::Vec3;
 
 use a3d::model::load_model;
 use a3d::render::Framebuffer;
-use a3d::{framebuffer_to_string, render_frame};
+use a3d::{RenderParams, framebuffer_to_string, render_frame};
 
 const LIGHT_DIR: Vec3 = Vec3::new(0.70710677, -0.70710677, 0.0);
 
@@ -20,7 +20,14 @@ fn render_snapshot(
 ) -> String {
     let mesh = load_model(Path::new(model_path)).expect("model should load");
     let mut fb = Framebuffer::new(width, height);
-    render_frame(&mut fb, &mesh, azimuth, altitude, zoom, LIGHT_DIR, None);
+    let params = RenderParams {
+        azimuth,
+        altitude,
+        zoom,
+        light_dir: LIGHT_DIR,
+        fg_override: None,
+    };
+    render_frame(&mut fb, &mesh, &params);
     framebuffer_to_string(&fb)
 }
 

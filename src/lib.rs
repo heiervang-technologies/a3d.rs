@@ -13,12 +13,18 @@
 //! use glam::Vec3;
 //! use a3d::model::load_model;
 //! use a3d::render::Framebuffer;
-//! use a3d::{render_frame, framebuffer_to_string};
+//! use a3d::{render_frame, framebuffer_to_string, RenderParams};
 //!
 //! let mesh = load_model(Path::new("models/dog.stl")).expect("load model");
 //! let mut fb = Framebuffer::new(80, 24);
-//! let light = Vec3::new(1.0, -1.0, 0.0).normalize();
-//! render_frame(&mut fb, &mesh, 0.0, 0.0, 1.0, light, None);
+//! let params = RenderParams {
+//!     azimuth: 0.0,
+//!     altitude: 0.0,
+//!     zoom: 1.0,
+//!     light_dir: Vec3::new(1.0, -1.0, 0.0).normalize(),
+//!     fg_override: None,
+//! };
+//! render_frame(&mut fb, &mesh, &params);
 //! print!("{}", framebuffer_to_string(&fb));
 //! ```
 //!
@@ -57,17 +63,32 @@ pub fn rotate_x(v: Vec3, cos_a: f32, sin_a: f32) -> Vec3 {
     Vec3::new(v.x, v.y * cos_a - v.z * sin_a, v.y * sin_a + v.z * cos_a)
 }
 
+/// Camera pose and shading parameters shared by the CPU and GPU renderers.
+#[derive(Clone, Copy, Debug)]
+pub struct RenderParams {
+    /// Orbit azimuth in radians.
+    pub azimuth: f32,
+    /// Orbit altitude in radians.
+    pub altitude: f32,
+    /// Zoom factor applied to projected X/Y (depth is left unscaled).
+    pub zoom: f32,
+    /// Direction the scene light points toward (expected normalized).
+    pub light_dir: Vec3,
+    /// Optional foreground color override in linear RGB `[0, 1]`; `None` keeps
+    /// each triangle's own material/vertex color.
+    pub fg_override: Option<[f32; 3]>,
+}
+
 /// Render a single frame into the framebuffer.
 /// This is the core rendering function, usable without a terminal for testing.
-pub fn render_frame(
-    fb: &mut Framebuffer,
-    mesh: &model::Mesh,
-    azimuth: f32,
-    altitude: f32,
-    zoom: f32,
-    light_dir: Vec3,
-    fg_override: Option<[f32; 3]>,
-) {
+pub fn render_frame(fb: &mut Framebuffer, mesh: &model::Mesh, params: &RenderParams) {
+    let RenderParams {
+        azimuth,
+        altitude,
+        zoom,
+        light_dir,
+        fg_override,
+    } = *params;
     let w = fb.width;
     let h = fb.height;
 
@@ -127,19 +148,19 @@ pub fn render_frame(
 }
 
 /// Render a single frame using the GPU compute pipeline.
-// Mirrors `render_frame`'s parameter set; a `RenderParams` struct is tracked as
-// follow-up cleanup (see issue #3).
-#[allow(clippy::too_many_arguments)]
 pub fn render_frame_gpu(
     fb: &mut Framebuffer,
     pipeline: &RasterPipeline,
     ctx: &GpuContext,
-    azimuth: f32,
-    altitude: f32,
-    zoom: f32,
-    light_dir: Vec3,
-    fg_override: Option<[f32; 3]>,
+    params: &RenderParams,
 ) {
+    let RenderParams {
+        azimuth,
+        altitude,
+        zoom,
+        light_dir,
+        fg_override,
+    } = *params;
     let w = fb.width;
     let h = fb.height;
 

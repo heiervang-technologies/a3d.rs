@@ -9,13 +9,20 @@ use glam::Vec3;
 use a3d::gpu::{GpuContext, RasterPipeline};
 use a3d::model::load_model;
 use a3d::render::Framebuffer;
-use a3d::{framebuffer_to_string, render_frame_gpu};
+use a3d::{RenderParams, framebuffer_to_string, render_frame_gpu};
 
 const LIGHT_DIR: Vec3 = Vec3::new(0.70710677, -0.70710677, 0.0);
 
 fn render(pipeline: &RasterPipeline, ctx: &GpuContext, w: usize, h: usize) -> String {
     let mut fb = Framebuffer::new(w, h);
-    render_frame_gpu(&mut fb, pipeline, ctx, 0.0, 0.0, 1.0, LIGHT_DIR, None);
+    let params = RenderParams {
+        azimuth: 0.0,
+        altitude: 0.0,
+        zoom: 1.0,
+        light_dir: LIGHT_DIR,
+        fg_override: None,
+    };
+    render_frame_gpu(&mut fb, pipeline, ctx, &params);
     framebuffer_to_string(&fb)
 }
 

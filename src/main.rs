@@ -11,7 +11,7 @@ use a3d::gpu::{GpuContext, RasterPipeline};
 use a3d::model::load_model;
 use a3d::render::Framebuffer;
 use a3d::terminal::{InputEvent, TerminalDisplay};
-use a3d::{AL_SPEED, AZ_SPEED, render_frame, render_frame_gpu};
+use a3d::{AL_SPEED, AZ_SPEED, RenderParams, render_frame, render_frame_gpu};
 
 #[derive(Parser)]
 #[command(name = "a3d", about = "GPU-accelerated ASCII 3D renderer")]
@@ -184,12 +184,17 @@ fn main() {
         }
 
         // Render
+        let params = RenderParams {
+            azimuth,
+            altitude,
+            zoom,
+            light_dir,
+            fg_override: fg_color,
+        };
         if let (Some(pipeline), Some(ctx)) = (&gpu_pipeline, &gpu_ctx) {
-            render_frame_gpu(
-                &mut fb, pipeline, ctx, azimuth, altitude, zoom, light_dir, fg_color,
-            );
+            render_frame_gpu(&mut fb, pipeline, ctx, &params);
         } else {
-            render_frame(&mut fb, &mesh, azimuth, altitude, zoom, light_dir, fg_color);
+            render_frame(&mut fb, &mesh, &params);
         }
 
         let fps_label = if current_fps > 0.0 {

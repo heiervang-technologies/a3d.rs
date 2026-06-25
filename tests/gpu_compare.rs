@@ -8,7 +8,7 @@ use a3d::gpu::GpuContext;
 use a3d::gpu::RasterPipeline;
 use a3d::model::load_model;
 use a3d::render::Framebuffer;
-use a3d::{framebuffer_to_string, render_frame, render_frame_gpu};
+use a3d::{RenderParams, framebuffer_to_string, render_frame, render_frame_gpu};
 
 const LIGHT_DIR: Vec3 = Vec3::new(0.70710677, -0.70710677, 0.0);
 const W: usize = 80;
@@ -19,15 +19,22 @@ const H: usize = 24;
 /// gracefully on GPU-less CI runners instead of failing the suite.
 fn compare(model: &str, az: f32, al: f32, zoom: f32) -> Option<(String, String, f64)> {
     let mesh = load_model(Path::new(model)).expect("model should load");
+    let params = RenderParams {
+        azimuth: az,
+        altitude: al,
+        zoom,
+        light_dir: LIGHT_DIR,
+        fg_override: None,
+    };
 
     let mut cpu_fb = Framebuffer::new(W, H);
-    render_frame(&mut cpu_fb, &mesh, az, al, zoom, LIGHT_DIR, None);
+    render_frame(&mut cpu_fb, &mesh, &params);
     let cpu_str = framebuffer_to_string(&cpu_fb);
 
     let ctx = pollster::block_on(GpuContext::new())?;
     let pipeline = RasterPipeline::new(&ctx, &mesh, W as u32, H as u32);
     let mut gpu_fb = Framebuffer::new(W, H);
-    render_frame_gpu(&mut gpu_fb, &pipeline, &ctx, az, al, zoom, LIGHT_DIR, None);
+    render_frame_gpu(&mut gpu_fb, &pipeline, &ctx, &params);
     let gpu_str = framebuffer_to_string(&gpu_fb);
 
     let total = cpu_str.chars().count();
