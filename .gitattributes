@@ -1,0 +1,3 @@
+# Treat binary assets as binary so they are never line-ending normalized.
+*.stl binary
+*.gif binary

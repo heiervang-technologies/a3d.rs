@@ -9,7 +9,7 @@ welcome — bug reports, fixes, features, docs, and test models.
 git clone https://github.com/heiervang-technologies/a3d.rs.git
 cd a3d.rs
 cargo build
-cargo run -- models/bunny.obj
+cargo run -- models/dog.stl
 ```
 
 A Vulkan-capable GPU is optional: a3d falls back to the CPU rasterizer when no

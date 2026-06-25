@@ -1,26 +1,14 @@
-# Sample models
+# Sample model
 
-These meshes are bundled only as test/demo inputs for a3d. They are **not**
-covered by the project's MIT license — each retains the terms of its original
-source. They are classic, widely redistributed computer-graphics reference
-models, included here for convenience and reproducibility of the demo and tests.
+`dog.stl` is a small (~1.2k-triangle) sample mesh bundled as the default
+test/demo input for a3d. It is the author's own model, generated from an
+original image with [Meshy](https://www.meshy.ai/), and is provided under the
+project's [MIT License](../LICENSE) along with the rest of the repository.
 
-| File | Model | Origin |
-|------|-------|--------|
-| `bunny.obj` | Stanford Bunny | [Stanford 3D Scanning Repository](https://graphics.stanford.edu/data/3Dscanrep/), Stanford Computer Graphics Laboratory (decimated) |
-| `dragon.obj` | Stanford Dragon | [Stanford 3D Scanning Repository](https://graphics.stanford.edu/data/3Dscanrep/), Stanford Computer Graphics Laboratory |
-| `teapot.obj` | Utah Teapot | Martin Newell, University of Utah (1975); effectively public domain |
-| `cow.obj` | Cow | Classic graphics test model (MeshLab-exported); commonly attributed to Viewpoint Animation Engineering / Deie Spencer |
+It exists purely so the demo, snapshot tests, and `cargo run` work out of the
+box. Nothing in the engine depends on this specific mesh — point a3d at any
+OBJ or STL file of your own:
 
-All four files were obtained via the [voxcii](https://github.com/ashish0kumar/voxcii)
-project (MIT, © ashish0kumar), which is also the inspiration for a3d.
-
-## Acknowledgements
-
-The Stanford Bunny and Dragon are provided by the Stanford Computer Graphics
-Laboratory. If you use these models, please credit the
-[Stanford 3D Scanning Repository](https://graphics.stanford.edu/data/3Dscanrep/).
-The Stanford models are intended for research and educational use.
-
-If you prefer to ship a3d without third-party assets, point it at any OBJ/STL
-file of your own — nothing in the engine depends on these specific meshes.
+```bash
+a3d path/to/your-model.obj
+```

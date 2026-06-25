@@ -42,5 +42,6 @@ Tracked in GitHub Issue #1. M1 (core rendering) and M2 (GPU compute pipeline) ar
 
 ## Test Models
 
-Sample OBJ files live in `models/` (bunny, cow, teapot, dragon), obtained via the
-upstream voxcii project. Provenance and attribution are documented in `models/README.md`.
+The bundled sample mesh is `models/dog.stl` (the author's own Meshy-generated
+model, MIT-licensed with the repo). See `models/README.md`. Tests and the demo
+default to it; the engine works with any OBJ/STL file.

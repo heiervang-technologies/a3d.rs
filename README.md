@@ -9,9 +9,9 @@ Renders 3D models (OBJ, STL) as real-time ASCII art in your terminal, using wgpu
 
 Inspired by [voxcii](https://github.com/ashish0kumar/voxcii), rebuilt from scratch in Rust for memory safety, performance, and extensibility.
 
-![a3d rendering a spinning Stanford bunny as real-time ASCII 3D](assets/demo.gif)
+![a3d rendering a spinning dog model as real-time ASCII 3D](assets/demo.gif)
 
-> Recorded with [VHS](https://github.com/charmbracelet/vhs) from `assets/demo.tape` — `a3d models/bunny.obj --color --fg 00ddff`.
+> Recorded with [VHS](https://github.com/charmbracelet/vhs) from `assets/demo.tape` — `a3d models/dog.stl --color --fg 00ddff`.
 
 ## Features
 
@@ -212,9 +212,8 @@ See [Issue #1](https://github.com/heiervang-technologies/a3d.rs/issues/1) for th
 ## Acknowledgements
 
 - Inspired by [voxcii](https://github.com/ashish0kumar/voxcii) by ashish0kumar.
-- The bundled sample meshes (`models/`) are classic graphics reference models
-  (Stanford Bunny & Dragon, Utah Teapot, and a test cow). See
-  [`models/README.md`](models/README.md) for provenance and attribution.
+- The bundled sample mesh `models/dog.stl` is the author's own model. See
+  [`models/README.md`](models/README.md) for details.
 
 ## Contributing
 
@@ -223,7 +222,6 @@ issues: please follow [SECURITY.md](SECURITY.md).
 
 ## License
 
-The a3d source code is licensed under the [MIT License](LICENSE).
-
-The sample models under `models/` are **not** covered by that license; they
-retain their original terms (see [`models/README.md`](models/README.md)).
+a3d is licensed under the [MIT License](LICENSE). This covers both the source
+code and the bundled sample model (`models/dog.stl`), which is the author's own
+work — see [`models/README.md`](models/README.md).

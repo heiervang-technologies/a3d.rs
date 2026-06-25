@@ -29,19 +29,11 @@ fn render_snapshot(
 fn generate_snapshots() {
     std::fs::create_dir_all("tests/snapshots").unwrap();
 
-    let bunny = render_snapshot("models/bunny.obj", 80, 24, 0.0, 0.0, 1.0);
-    std::fs::write("tests/snapshots/bunny_80x24.txt", &bunny).unwrap();
-    println!("Wrote bunny_80x24.txt");
+    let dog = render_snapshot("models/dog.stl", 80, 24, 0.0, 0.0, 1.0);
+    std::fs::write("tests/snapshots/dog_80x24.txt", &dog).unwrap();
+    println!("Wrote dog_80x24.txt");
 
-    let bunny_rot = render_snapshot("models/bunny.obj", 80, 24, 1.0, 0.3, 1.0);
-    std::fs::write("tests/snapshots/bunny_80x24_rotated.txt", &bunny_rot).unwrap();
-    println!("Wrote bunny_80x24_rotated.txt");
-
-    let cow = render_snapshot("models/cow.obj", 80, 24, 0.0, 0.0, 1.0);
-    std::fs::write("tests/snapshots/cow_80x24.txt", &cow).unwrap();
-    println!("Wrote cow_80x24.txt");
-
-    let teapot = render_snapshot("models/teapot.obj", 80, 24, 0.0, 0.0, 1.0);
-    std::fs::write("tests/snapshots/teapot_80x24.txt", &teapot).unwrap();
-    println!("Wrote teapot_80x24.txt");
+    let dog_rot = render_snapshot("models/dog.stl", 80, 24, 1.0, 0.3, 1.0);
+    std::fs::write("tests/snapshots/dog_80x24_rotated.txt", &dog_rot).unwrap();
+    println!("Wrote dog_80x24_rotated.txt");
 }

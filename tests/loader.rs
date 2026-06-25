@@ -1,6 +1,6 @@
-//! Structural invariants for the OBJ loader against the committed sample models.
-//! Complements the rendering snapshot tests (which only cover bunny/cow/teapot)
-//! by also exercising dragon.obj and asserting mesh-level properties directly.
+//! Structural invariants for the loader against the committed sample model.
+//! Ensures the bundled `models/dog.stl` is present, parses, and normalizes,
+//! complementing the synthetic-STL coverage in `tests/stl.rs`.
 use std::path::Path;
 
 use a3d::model::load_model;
@@ -40,8 +40,6 @@ fn assert_valid_mesh(path: &str) {
 }
 
 #[test]
-fn loads_all_sample_models() {
-    for model in ["bunny", "cow", "teapot", "dragon"] {
-        assert_valid_mesh(&format!("models/{model}.obj"));
-    }
+fn loads_sample_model() {
+    assert_valid_mesh("models/dog.stl");
 }

@@ -10,7 +10,7 @@ assignees: ''
 A clear description of what went wrong.
 
 **To reproduce**
-The exact command, e.g. `a3d models/bunny.obj --color --gpu`, and the model
+The exact command, e.g. `a3d models/dog.stl --color --gpu`, and the model
 file (attach or link it if it isn't one of the bundled samples).
 
 **Expected vs actual**
