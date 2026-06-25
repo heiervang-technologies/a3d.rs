@@ -3,6 +3,9 @@
 Thanks for your interest in improving a3d! Contributions of all kinds are
 welcome — bug reports, fixes, features, docs, and test models.
 
+This project follows a [Code of Conduct](CODE_OF_CONDUCT.md); by participating
+you are expected to uphold it.
+
 ## Getting started
 
 ```bash

@@ -218,8 +218,9 @@ See [Issue #1](https://github.com/heiervang-technologies/a3d.rs/issues/1) for th
 
 ## Contributing
 
-Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Security
-issues: please follow [SECURITY.md](SECURITY.md).
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) and our
+[Code of Conduct](CODE_OF_CONDUCT.md). Security issues: please follow
+[SECURITY.md](SECURITY.md).
 
 ## License
 
