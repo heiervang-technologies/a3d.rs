@@ -44,3 +44,27 @@ jobs:
       # locally on a Vulkan machine before release.
       - name: Run tests
         run: cargo test --verbose -- --test-threads=1
+
+  msrv:
+    name: MSRV (1.85)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Verify the crate still compiles on the MSRV declared in Cargo.toml
+      # (rust-version). A check, not a full test run — MSRV is about whether the
+      # code and its locked dependencies build on the minimum supported compiler.
+      - name: Install Rust 1.85
+        uses: dtolnay/rust-toolchain@1.85
+
+      - name: Cache cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-msrv-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Check on the declared MSRV
+        run: cargo check --all-targets --all-features
