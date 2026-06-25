@@ -6,7 +6,7 @@ use std::path::Path;
 use a3d::model::load_model;
 
 fn assert_valid_mesh(path: &str) {
-    let mesh = load_model(Path::new(path));
+    let mesh = load_model(Path::new(path)).expect("sample model should load");
 
     assert!(!mesh.vertices.is_empty(), "{path}: loaded no vertices");
     assert!(!mesh.indices.is_empty(), "{path}: loaded no indices");

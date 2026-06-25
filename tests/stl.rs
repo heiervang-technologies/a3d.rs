@@ -34,7 +34,7 @@ fn write_temp(name: &str, bytes: &[u8]) -> PathBuf {
 #[test]
 fn loads_binary_stl() {
     let path = write_temp("one_tri", &one_triangle_binary_stl());
-    let mesh = load_model(&path);
+    let mesh = load_model(&path).expect("synthetic STL should load");
     let _ = std::fs::remove_file(&path);
 
     assert_eq!(mesh.vertices.len(), 3, "expected 3 vertices");
