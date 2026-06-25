@@ -1,17 +1,24 @@
 use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
 
+/// A single mesh vertex, laid out for direct upload to the GPU (`Pod`).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub struct Vertex {
+    /// Position in model space `(x, y, z)`.
     pub position: [f32; 3],
+    /// Vertex normal `(x, y, z)`; `[0, 0, 0]` when the source file omits normals.
     pub normal: [f32; 3],
+    /// Linear RGB base color in `[0, 1]`, from the material or a default gray.
     pub color: [f32; 3],
 }
 
+/// A triangle mesh: a vertex list plus triangle indices (3 per triangle).
 #[derive(Debug)]
 pub struct Mesh {
+    /// The vertices referenced by [`indices`](Self::indices).
     pub vertices: Vec<Vertex>,
+    /// Triangle indices into [`vertices`](Self::vertices), three per triangle.
     pub indices: Vec<u32>,
 }
 

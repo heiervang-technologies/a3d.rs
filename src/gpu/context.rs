@@ -2,12 +2,18 @@ use wgpu::{Adapter, Device, Instance, Queue};
 
 /// Holds the wgpu device, queue, and adapter.
 pub struct GpuContext {
+    /// The logical GPU device used to create pipelines and buffers.
     pub device: Device,
+    /// The command queue for submitting work to the device.
     pub queue: Queue,
+    /// The physical adapter the device was created from.
     pub adapter: Adapter,
 }
 
 impl GpuContext {
+    /// Initialize a GPU context, or return `None` if no suitable adapter is
+    /// available. Requires 64-bit atomic min/max (`SHADER_INT64_ATOMIC_MIN_MAX`);
+    /// adapters lacking it return `None` so the caller can fall back to the CPU.
     pub async fn new() -> Option<Self> {
         let instance = Instance::default();
 

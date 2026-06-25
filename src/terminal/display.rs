@@ -14,16 +14,25 @@ use crate::render::Framebuffer;
 
 /// Input events that the render loop cares about.
 pub enum InputEvent {
+    /// A key press, carrying the crossterm [`KeyCode`].
     Key(KeyCode),
+    /// Mouse wheel scrolled up (zoom in).
     ScrollUp,
+    /// Mouse wheel scrolled down (zoom out).
     ScrollDown,
 }
 
+/// An RAII handle to the terminal in raw mode + alternate screen.
+///
+/// Constructing it enables raw mode and hides the cursor; dropping it restores
+/// the terminal, so a panic mid-render still leaves a clean terminal.
 pub struct TerminalDisplay {
     stdout: Stdout,
 }
 
 impl TerminalDisplay {
+    /// Enter raw mode + the alternate screen, hide the cursor, and enable mouse
+    /// capture. The terminal is restored when the returned handle is dropped.
     pub fn new() -> io::Result<Self> {
         let mut stdout = io::stdout();
         terminal::enable_raw_mode()?;
@@ -33,11 +42,15 @@ impl TerminalDisplay {
         Ok(Self { stdout })
     }
 
+    /// The terminal size in character cells `(width, height)`, falling back to
+    /// `(80, 24)` if it can't be queried.
     pub fn size(&self) -> (usize, usize) {
         let (w, h) = terminal::size().unwrap_or((80, 24));
         (w as usize, h as usize)
     }
 
+    /// Draw `fb` to the terminal: optional per-cell `color`, optional `bg`
+    /// background, and an optional top-right `overlay` (e.g. an FPS counter).
     pub fn render(
         &mut self,
         fb: &Framebuffer,
