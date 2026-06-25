@@ -1,5 +1,8 @@
 # a3d
 
+[![Rust CI](https://github.com/heiervang-technologies/a3d.rs/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/heiervang-technologies/a3d.rs/actions/workflows/rust-ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 GPU-accelerated ASCII 3D rendering engine written in Rust.
 
 Renders 3D models (OBJ, STL) as real-time ASCII art in your terminal, using wgpu compute shaders (Vulkan) for rasterization and glam for SIMD-accelerated math.
@@ -206,6 +209,21 @@ See [Issue #1](https://github.com/heiervang-technologies/a3d.rs/issues/1) for th
 - **M5:** Performance and polish
 - **M6:** Extensions (WASM, export, plugins)
 
+## Acknowledgements
+
+- Inspired by [voxcii](https://github.com/ashish0kumar/voxcii) by ashish0kumar.
+- The bundled sample meshes (`models/`) are classic graphics reference models
+  (Stanford Bunny & Dragon, Utah Teapot, and a test cow). See
+  [`models/README.md`](models/README.md) for provenance and attribution.
+
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Security
+issues: please follow [SECURITY.md](SECURITY.md).
+
 ## License
 
-MIT
+The a3d source code is licensed under the [MIT License](LICENSE).
+
+The sample models under `models/` are **not** covered by that license; they
+retain their original terms (see [`models/README.md`](models/README.md)).

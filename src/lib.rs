@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 pub mod gpu;
 pub mod model;
 pub mod render;

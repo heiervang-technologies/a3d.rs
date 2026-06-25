@@ -42,4 +42,5 @@ Tracked in GitHub Issue #1. M1 (core rendering) and M2 (GPU compute pipeline) ar
 
 ## Test Models
 
-Sample OBJ files from upstream voxcii repo at `~/ht/forks/ht-voxcii/models/` (bunny, cow, teapot, dragon).
+Sample OBJ files live in `models/` (bunny, cow, teapot, dragon), obtained via the
+upstream voxcii project. Provenance and attribution are documented in `models/README.md`.

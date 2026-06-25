@@ -1,9 +1,5 @@
 name: Rust CI
 
-# Runs on the org's self-hosted runner: a3d.rs is private, and the org moved
-# private-repo CI off GitHub-hosted minutes (cloud/k8s/runners/README.md).
-# Labels are `self-hosted,linux,x64,k8s`, so [self-hosted, linux, x64] matches.
-
 on:
   push:
     branches: [ main ]
@@ -16,7 +12,7 @@ env:
 jobs:
   test:
     name: Test
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -25,28 +21,14 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libssl-dev
-
-      - name: Cache cargo registry
+      - name: Cache cargo
         uses: actions/cache@v4
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Cache cargo index
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Cache cargo build
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -57,7 +39,8 @@ jobs:
       - name: Build
         run: cargo build --verbose
 
-      # The GPU-dependent test (gpu_compare) skips itself when no adapter is
-      # present, so the suite is green on a GPU-less runner.
+      # gpu_compare skips itself when no Vulkan adapter is present, so the suite
+      # stays green on GitHub-hosted (GPU-less) runners. The GPU path is exercised
+      # locally on a Vulkan machine before release.
       - name: Run tests
         run: cargo test --verbose -- --test-threads=1
