@@ -11,13 +11,13 @@ keywords = ["ascii", "3d", "renderer", "terminal", "gpu"]
 categories = ["command-line-utilities", "rendering"]
 
 [dependencies]
-wgpu = "24"
-glam = "0.29"
-crossterm = "0.28"
+wgpu = "26"
+glam = "0.33"
+crossterm = "0.29"
 tobj = "4"
 clap = { version = "4", features = ["derive"] }
 pollster = "0.4"
 bytemuck = { version = "1", features = ["derive"] }
 log = "0.4"
 env_logger = "0.11"
-stl_io = "0.8"
+stl_io = "0.11"

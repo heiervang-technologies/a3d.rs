@@ -17,7 +17,8 @@ impl GpuContext {
                 force_fallback_adapter: false,
                 compatible_surface: None,
             })
-            .await?;
+            .await
+            .ok()?;
 
         // The rasterizer resolves depth with a 64-bit atomicMin that packs
         // (depth << 32 | triangle_index), so the per-pixel winner is unique and
@@ -34,15 +35,13 @@ impl GpuContext {
         }
 
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("a3d device"),
-                    required_features: needed,
-                    required_limits: wgpu::Limits::default(),
-                    memory_hints: wgpu::MemoryHints::Performance,
-                },
-                None,
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("a3d device"),
+                required_features: needed,
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::Performance,
+                trace: wgpu::Trace::Off,
+            })
             .await
             .ok()?;
 
