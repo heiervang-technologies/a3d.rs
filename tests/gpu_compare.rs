@@ -49,17 +49,19 @@ fn gpu_vs_cpu_dog() {
     println!("=== CPU ===\n{cpu_str}\n\n=== GPU ===\n{gpu_str}");
     println!("diff ratio: {:.2}%", ratio * 100.0);
 
-    // The GPU pipeline mirrors the CPU rasterizer, so at zoom 1.0 outputs should
-    // be nearly identical — only a few pixels differ from the two-pass depth
-    // recompute dropping float-tie ties (see PR #11 for the single-pass fix that
-    // makes this exact). Observed ~0.6% on dog.stl at this pose.
+    // The GPU resolves depth with a single atomicMin over packed
+    // (depth << 32 | triangle_index), and the shade pass colors a pixel only if
+    // its triangle was the recorded winner — no float recompute, no tie holes —
+    // so the GPU matches the CPU rasterizer pixel-for-pixel (observed 0.00% on
+    // dog.stl). The small tolerance only absorbs rare cross-driver float rounding
+    // at ASCII luminance-bucket boundaries.
     assert!(
         cpu_str.chars().any(|c| c != ' ' && c != '\n'),
         "CPU render is blank — test fixture is broken"
     );
     assert!(
-        ratio < 0.01,
-        "GPU diverged from CPU by {:.2}% — exceeds 1% tolerance",
+        ratio < 0.005,
+        "GPU diverged from CPU by {:.2}% — exceeds 0.5% tolerance",
         ratio * 100.0
     );
 }
@@ -67,16 +69,14 @@ fn gpu_vs_cpu_dog() {
 /// Regression guard for the depth-vs-zoom bug: the GPU clamps quantized depth to
 /// [0,1], so when projected z was scaled by zoom it spilled out of range and
 /// collapsed the z-ordering, with divergence growing sharply with zoom. With z
-/// kept zoom-independent the canonical (front-facing) pose stays within a couple
-/// of percent and flat across zoom — so a reintroduction of that bug, which
-/// blows the depth buffer out of range at high zoom, trips this ceiling.
+/// kept zoom-independent the front-facing pose stays pixel-identical and flat
+/// across zoom — so a reintroduction of that bug, which blows the depth buffer
+/// out of range at high zoom, trips this ceiling.
 ///
-/// We probe the front pose deliberately: the two-pass shade pass recomputes depth
-/// and drops float-tie pixels as holes, and that benign jitter is pose-dependent —
-/// grazing-angle self-overlap (e.g. a rotated, zoomed view of a dense mesh) can
-/// reach double digits without any depth-ordering error. PR #11's single-pass
-/// atomic packing removes the jitter entirely; until then this guard tracks the
-/// property that actually matters here (depth ordering), not the tie noise.
+/// With depth resolved by the single-pass atomicMin packing, GPU and CPU agree
+/// exactly here (observed 0.00% at every zoom); the 1% ceiling leaves only a
+/// little headroom for cross-driver float rounding while still catching a
+/// depth-vs-zoom regression, which spikes divergence well past it.
 #[test]
 fn gpu_vs_cpu_zoom_sweep() {
     let mut ran = false;
@@ -89,8 +89,8 @@ fn gpu_vs_cpu_zoom_sweep() {
             ran = true;
             println!("{model} @ zoom {zoom}: {:.2}%", ratio * 100.0);
             assert!(
-                ratio < 0.03,
-                "{model} @ zoom {zoom}: GPU diverged from CPU by {:.2}% — exceeds 3% \
+                ratio < 0.01,
+                "{model} @ zoom {zoom}: GPU diverged from CPU by {:.2}% — exceeds 1% \
                  (depth-vs-zoom regression?)",
                 ratio * 100.0
             );
