@@ -9,6 +9,9 @@ repository = "https://github.com/heiervang-technologies/a3d.rs"
 readme = "README.md"
 keywords = ["ascii", "3d", "renderer", "terminal", "gpu"]
 categories = ["command-line-utilities", "rendering"]
+# Keep the published crate lean: the demo GIF (~1.5 MB) and dev/CI files aren't
+# needed to build or use a3d. They stay in the git repo regardless.
+exclude = ["assets/", ".github/", "CLAUDE.md", "Makefile"]
 
 [dependencies]
 wgpu = "26"
