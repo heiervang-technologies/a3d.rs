@@ -209,8 +209,13 @@ pub fn rasterize_triangle(
         for yy in y_start..=y_end {
             let y = (yy as f32 + 0.5) * dy;
 
-            let depth =
-                pts[0].z - (tri_normal.x * (x - pts[0].x) + tri_normal.y * (y - pts[0].y)) / nz;
+            // Clamp to [0,1] to match the GPU, where pack_depth clamps before
+            // quantizing. Without this, a steep triangle whose interpolated
+            // depth extrapolates outside the range would order differently on
+            // the two backends.
+            let depth = (pts[0].z
+                - (tri_normal.x * (x - pts[0].x) + tri_normal.y * (y - pts[0].y)) / nz)
+                .clamp(0.0, 1.0);
 
             fb.set_pixel(xx as usize, yy as usize, depth, luminance, color);
         }
