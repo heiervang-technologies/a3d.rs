@@ -62,7 +62,7 @@ jobs:
       # (rust-version). A check, not a full test run — MSRV is about whether the
       # code and its locked dependencies build on the minimum supported compiler.
       - name: Install Rust 1.85
-        uses: dtolnay/rust-toolchain@1.85
+        uses: dtolnay/rust-toolchain@1.100
 
       - name: Cache cargo
         uses: actions/cache@v6
