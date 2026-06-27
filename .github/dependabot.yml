@@ -18,3 +18,9 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+    ignore:
+      # dtolnay/rust-toolchain is pinned to TOOLCHAIN versions (@stable in the
+      # test job, @1.85 in the MSRV job), not action versions. Dependabot
+      # misreads @1.85 as an action version and proposes @1.100, which would
+      # silently break the MSRV-1.85 check. These refs are managed manually.
+      - dependency-name: "dtolnay/rust-toolchain"
