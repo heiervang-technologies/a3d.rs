@@ -47,6 +47,20 @@ pub const AZ_SPEED: f32 = 2.0;
 /// Auto-rotation altitude speed, offset by the golden ratio for smooth drift.
 pub const AL_SPEED: f32 = GOLDEN_RATIO * 0.25;
 
+fn render_inputs_are_finite(
+    azimuth: f32,
+    altitude: f32,
+    zoom: f32,
+    light_dir: Vec3,
+    fg_override: Option<[f32; 3]>,
+) -> bool {
+    azimuth.is_finite()
+        && altitude.is_finite()
+        && zoom.is_finite()
+        && light_dir.is_finite()
+        && fg_override.is_none_or(|color| color.into_iter().all(f32::is_finite))
+}
+
 /// Rotate `v` about the Y axis, given the precomputed cosine and sine of the angle.
 pub fn rotate_y(v: Vec3, cos_a: f32, sin_a: f32) -> Vec3 {
     Vec3::new(v.x * cos_a - v.z * sin_a, v.y, v.x * sin_a + v.z * cos_a)
@@ -71,6 +85,14 @@ pub fn render_frame(
     let w = fb.width;
     let h = fb.height;
 
+    fb.clear();
+    if w == 0
+        || h == 0
+        || !render_inputs_are_finite(azimuth, altitude, zoom, light_dir, fg_override)
+    {
+        return;
+    }
+
     let logical_h: f32 = 1.0;
     let logical_w: f32 = w as f32 / (h as f32 * 1.8);
     let dx = logical_w / w as f32;
@@ -81,17 +103,23 @@ pub fn render_frame(
     let cos_al = (-altitude).cos();
     let sin_al = (-altitude).sin();
 
-    fb.clear();
-
     for tri in mesh.indices.chunks(3) {
         if tri.len() < 3 {
             continue;
         }
 
-        let v0 = &mesh.vertices[tri[0] as usize];
+        // `Mesh` is constructible by library users, so do not assume it came
+        // through the validated file loader.
+        let (Some(v0), Some(v1), Some(v2)) = (
+            mesh.vertices.get(tri[0] as usize),
+            mesh.vertices.get(tri[1] as usize),
+            mesh.vertices.get(tri[2] as usize),
+        ) else {
+            continue;
+        };
         let p0 = Vec3::from(v0.position);
-        let p1 = Vec3::from(mesh.vertices[tri[1] as usize].position);
-        let p2 = Vec3::from(mesh.vertices[tri[2] as usize].position);
+        let p1 = Vec3::from(v1.position);
+        let p2 = Vec3::from(v2.position);
 
         let r0 = rotate_x(rotate_y(p0, cos_az, sin_az), cos_al, sin_al);
         let r1 = rotate_x(rotate_y(p1, cos_az, sin_az), cos_al, sin_al);
@@ -142,6 +170,30 @@ pub fn render_frame_gpu(
 ) {
     let w = fb.width;
     let h = fb.height;
+
+    fb.clear();
+    if !render_inputs_are_finite(azimuth, altitude, zoom, light_dir, fg_override) {
+        return;
+    }
+    let Ok(w_u32) = u32::try_from(w) else {
+        log::error!("framebuffer width {w} exceeds the GPU renderer's u32 limit");
+        return;
+    };
+    let Ok(h_u32) = u32::try_from(h) else {
+        log::error!("framebuffer height {h} exceeds the GPU renderer's u32 limit");
+        return;
+    };
+    if w == 0 || h == 0 {
+        return;
+    }
+    if pipeline.dimensions() != (w_u32, h_u32) {
+        log::error!(
+            "GPU pipeline is {}x{} but framebuffer is {w}x{h}; call RasterPipeline::resize first",
+            pipeline.dimensions().0,
+            pipeline.dimensions().1,
+        );
+        return;
+    }
 
     let logical_h: f32 = 1.0;
     let logical_w: f32 = w as f32 / (h as f32 * 1.8);
@@ -196,6 +248,20 @@ pub fn rasterize_triangle(
     luminance: f32,
     color: [f32; 3],
 ) {
+    if fb.width == 0
+        || fb.height == 0
+        || !dx.is_finite()
+        || !dy.is_finite()
+        || dx <= 0.0
+        || dy <= 0.0
+        || !p0.is_finite()
+        || !p1.is_finite()
+        || !p2.is_finite()
+        || !luminance.is_finite()
+        || !color.into_iter().all(f32::is_finite)
+    {
+        return;
+    }
     if (p1.x - p0.x) * (p2.y - p1.y) < (p2.x - p1.x) * (p1.y - p0.y) {
         return;
     }
@@ -290,5 +356,39 @@ mod tests {
         let (c, s) = (0.9f32.cos(), 0.9f32.sin());
         let r = rotate_x(rotate_y(v, c, s), c, s);
         assert!((r.length() - v.length()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn zero_sized_framebuffer_is_a_noop() {
+        let mesh = model::Mesh {
+            vertices: vec![],
+            indices: vec![],
+        };
+        let mut fb = Framebuffer::new(0, 0);
+        render_frame(&mut fb, &mesh, 0.0, 0.0, 1.0, Vec3::Y, None);
+        assert!(framebuffer_to_string(&fb).is_empty());
+    }
+
+    #[test]
+    fn invalid_programmatic_indices_are_ignored() {
+        let mesh = model::Mesh {
+            vertices: vec![],
+            indices: vec![0, 1, u32::MAX],
+        };
+        let mut fb = Framebuffer::new(2, 2);
+        render_frame(&mut fb, &mesh, 0.0, 0.0, 1.0, Vec3::Y, None);
+        assert!(fb.chars.iter().all(|&ch| ch == ' '));
+    }
+
+    #[test]
+    fn non_finite_render_inputs_are_ignored() {
+        let mesh = model::Mesh {
+            vertices: vec![],
+            indices: vec![],
+        };
+        let mut fb = Framebuffer::new(2, 2);
+        fb.set_pixel(0, 0, 0.0, 1.0, [1.0; 3]);
+        render_frame(&mut fb, &mesh, f32::NAN, 0.0, 1.0, Vec3::Y, None);
+        assert!(fb.chars.iter().all(|&ch| ch == ' '));
     }
 }

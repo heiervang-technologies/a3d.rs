@@ -17,14 +17,20 @@ impl GpuContext {
     pub async fn new() -> Option<Self> {
         let instance = Instance::default();
 
-        let adapter = instance
+        let adapter = match instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 force_fallback_adapter: false,
                 compatible_surface: None,
             })
             .await
-            .ok()?;
+        {
+            Ok(adapter) => adapter,
+            Err(error) => {
+                log::info!("no suitable GPU adapter: {error}");
+                return None;
+            }
+        };
 
         // The rasterizer resolves depth with a 64-bit atomicMin that packs
         // (depth << 32 | triangle_index), so the per-pixel winner is unique and
@@ -40,7 +46,7 @@ impl GpuContext {
             return None;
         }
 
-        let (device, queue) = adapter
+        let (device, queue) = match adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("a3d device"),
                 required_features: needed,
@@ -49,7 +55,13 @@ impl GpuContext {
                 trace: wgpu::Trace::Off,
             })
             .await
-            .ok()?;
+        {
+            Ok(pair) => pair,
+            Err(error) => {
+                log::warn!("failed to create GPU device: {error}");
+                return None;
+            }
+        };
 
         log::info!("GPU: {}", adapter.get_info().name);
 

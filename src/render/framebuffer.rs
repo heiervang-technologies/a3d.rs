@@ -22,7 +22,9 @@ pub struct Framebuffer {
 impl Framebuffer {
     /// Create a `width`×`height` framebuffer cleared to empty (depth `+∞`, spaces).
     pub fn new(width: usize, height: usize) -> Self {
-        let size = width * height;
+        let size = width
+            .checked_mul(height)
+            .expect("framebuffer dimensions overflow address space");
         Self {
             width,
             height,
@@ -44,7 +46,12 @@ impl Framebuffer {
     /// Depth-test and write a fragment: updates cell `(x, y)` only if `z` is
     /// nearer than the stored depth. Out-of-bounds coordinates are ignored.
     pub fn set_pixel(&mut self, x: usize, y: usize, z: f32, luminance: f32, color: [f32; 3]) {
-        if x >= self.width || y >= self.height {
+        if x >= self.width
+            || y >= self.height
+            || !z.is_finite()
+            || !luminance.is_finite()
+            || !color.into_iter().all(f32::is_finite)
+        {
             return;
         }
         let idx = y * self.width + x;
@@ -60,7 +67,9 @@ impl Framebuffer {
     pub fn resize(&mut self, width: usize, height: usize) {
         self.width = width;
         self.height = height;
-        let size = width * height;
+        let size = width
+            .checked_mul(height)
+            .expect("framebuffer dimensions overflow address space");
         self.depth.resize(size, f32::INFINITY);
         self.chars.resize(size, ' ');
         self.colors.resize(size, [0.0; 3]);
@@ -99,6 +108,16 @@ mod tests {
         let mut fb = Framebuffer::new(2, 2);
         fb.set_pixel(5, 5, 0.1, 1.0, [1.0, 1.0, 1.0]);
         assert!(fb.depth.iter().all(|&d| d == f32::INFINITY));
+    }
+
+    #[test]
+    fn set_pixel_ignores_non_finite_values() {
+        let mut fb = Framebuffer::new(1, 1);
+        fb.set_pixel(0, 0, f32::NAN, 1.0, [1.0; 3]);
+        fb.set_pixel(0, 0, 0.0, f32::INFINITY, [1.0; 3]);
+        fb.set_pixel(0, 0, 0.0, 1.0, [f32::NAN; 3]);
+        assert_eq!(fb.chars[0], ' ');
+        assert_eq!(fb.depth[0], f32::INFINITY);
     }
 
     #[test]

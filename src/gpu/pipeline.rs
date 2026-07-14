@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
@@ -49,6 +51,14 @@ pub struct RasterPipeline {
     readback_luminance_buffer: wgpu::Buffer,
     readback_color_buffer: wgpu::Buffer,
 
+    // Reused host-side clear patterns. Keeping these avoids four heap
+    // allocations per rendered frame; uploading them benchmarks faster than a
+    // separate 64-bit-atomic GPU clear pass at terminal resolutions.
+    clear_depth: Vec<u64>,
+    clear_char: Vec<u32>,
+    clear_luminance: Vec<f32>,
+    clear_color: Vec<f32>,
+
     uniform_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
 
@@ -62,6 +72,8 @@ impl RasterPipeline {
     /// [`resize`](Self::resize) when the terminal size changes.
     pub fn new(ctx: &GpuContext, mesh: &Mesh, width: u32, height: u32) -> Self {
         let device = &ctx.device;
+        let width = width.max(1);
+        let height = height.max(1);
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("raster shader"),
@@ -191,7 +203,30 @@ impl RasterPipeline {
         // a blank frame instead of a crash.
         const EMPTY_STORAGE_STUB: &[u8] = &[0u8; 4];
         let vertex_bytes = bytemuck::cast_slice(&mesh.vertices);
-        let index_bytes = bytemuck::cast_slice(&mesh.indices);
+        let complete_indices = &mesh.indices[..mesh.indices.len() / 3 * 3];
+        if complete_indices.len() != mesh.indices.len() {
+            log::warn!("ignoring incomplete trailing indices in programmatically constructed mesh");
+        }
+        let valid_indices: Cow<'_, [u32]> = if complete_indices.chunks_exact(3).all(|tri| {
+            tri.iter()
+                .all(|&index| (index as usize) < mesh.vertices.len())
+        }) {
+            Cow::Borrowed(complete_indices)
+        } else {
+            log::warn!("ignoring invalid triangles in programmatically constructed mesh");
+            Cow::Owned(
+                complete_indices
+                    .chunks_exact(3)
+                    .filter(|tri| {
+                        tri.iter()
+                            .all(|&index| (index as usize) < mesh.vertices.len())
+                    })
+                    .flatten()
+                    .copied()
+                    .collect(),
+            )
+        };
+        let index_bytes = bytemuck::cast_slice(valid_indices.as_ref());
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("vertex buffer"),
             contents: if vertex_bytes.is_empty() {
@@ -213,7 +248,7 @@ impl RasterPipeline {
         });
 
         let num_vertices = mesh.vertices.len() as u32;
-        let num_triangles = (mesh.indices.len() / 3) as u32;
+        let num_triangles = (valid_indices.len() / 3) as u32;
 
         // Uniform buffer
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -224,7 +259,9 @@ impl RasterPipeline {
         });
 
         // Create framebuffer-sized buffers
-        let pixel_count = (width * height) as u64;
+        let pixel_count = u64::from(width) * u64::from(height);
+        let pixel_count_usize =
+            usize::try_from(pixel_count).expect("GPU framebuffer does not fit in address space");
 
         let transformed_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("transformed buffer"),
@@ -345,6 +382,10 @@ impl RasterPipeline {
             readback_char_buffer,
             readback_luminance_buffer,
             readback_color_buffer,
+            clear_depth: vec![u64::MAX; pixel_count_usize],
+            clear_char: vec![32; pixel_count_usize],
+            clear_luminance: vec![0.0; pixel_count_usize],
+            clear_color: vec![0.0; pixel_count_usize * 3],
             uniform_buffer,
             bind_group,
             fb_width: width,
@@ -352,13 +393,20 @@ impl RasterPipeline {
         }
     }
 
+    /// Framebuffer dimensions this pipeline's GPU buffers were allocated for.
+    pub fn dimensions(&self) -> (u32, u32) {
+        (self.fb_width, self.fb_height)
+    }
+
     /// Resize framebuffer-dependent buffers. Must be called when terminal size changes.
     pub fn resize(&mut self, ctx: &GpuContext, width: u32, height: u32) {
+        let width = width.max(1);
+        let height = height.max(1);
         if width == self.fb_width && height == self.fb_height {
             return;
         }
         let device = &ctx.device;
-        let pixel_count = (width * height) as u64;
+        let pixel_count = u64::from(width) * u64::from(height);
 
         self.depth_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("depth buffer"),
@@ -408,6 +456,16 @@ impl RasterPipeline {
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let pixel_count =
+            usize::try_from(pixel_count).expect("GPU framebuffer does not fit in address space");
+        self.clear_depth.resize(pixel_count, u64::MAX);
+        self.clear_depth.fill(u64::MAX);
+        self.clear_char.resize(pixel_count, 32);
+        self.clear_char.fill(32);
+        self.clear_luminance.resize(pixel_count, 0.0);
+        self.clear_luminance.fill(0.0);
+        self.clear_color.resize(pixel_count * 3, 0.0);
+        self.clear_color.fill(0.0);
 
         // Rebuild bind group with new buffers
         let bind_group_layout = self.vertex_transform_pipeline.get_bind_group_layout(0);
@@ -460,38 +518,31 @@ impl RasterPipeline {
     pub(crate) fn render(&self, ctx: &GpuContext, fb: &mut Framebuffer, uniforms: &GpuUniforms) {
         let device = &ctx.device;
         let queue = &ctx.queue;
-        let pixel_count = (self.fb_width * self.fb_height) as usize;
+        let pixel_count = usize::try_from(u64::from(self.fb_width) * u64::from(self.fb_height))
+            .expect("GPU framebuffer does not fit in address space");
 
         // Write uniforms
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(uniforms));
 
-        // Clear depth buffer to u64::MAX (no triangle has index 0xFFFFFFFF, so
-        // unwritten pixels never match a real triangle in the shade pass).
-        let clear_depth: Vec<u64> = vec![u64::MAX; pixel_count];
-        queue.write_buffer(&self.depth_buffer, 0, bytemuck::cast_slice(&clear_depth));
-
-        // Clear output char to space (32)
-        let clear_char: Vec<u32> = vec![32u32; pixel_count];
+        queue.write_buffer(
+            &self.depth_buffer,
+            0,
+            bytemuck::cast_slice(&self.clear_depth),
+        );
         queue.write_buffer(
             &self.output_char_buffer,
             0,
-            bytemuck::cast_slice(&clear_char),
+            bytemuck::cast_slice(&self.clear_char),
         );
-
-        // Clear luminance to 0
-        let clear_lum: Vec<f32> = vec![0.0f32; pixel_count];
         queue.write_buffer(
             &self.output_luminance_buffer,
             0,
-            bytemuck::cast_slice(&clear_lum),
+            bytemuck::cast_slice(&self.clear_luminance),
         );
-
-        // Clear color to 0
-        let clear_color: Vec<f32> = vec![0.0f32; pixel_count * 3];
         queue.write_buffer(
             &self.output_color_buffer,
             0,
-            bytemuck::cast_slice(&clear_color),
+            bytemuck::cast_slice(&self.clear_color),
         );
 
         // Encode compute dispatches
@@ -568,42 +619,46 @@ impl RasterPipeline {
         let lum_slice = self.readback_luminance_buffer.slice(0..lum_size);
         let color_slice = self.readback_color_buffer.slice(0..color_size);
 
-        let (tx_c, rx_c) = std::sync::mpsc::channel();
-        let (tx_l, rx_l) = std::sync::mpsc::channel();
-        let (tx_k, rx_k) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let tx_char = tx.clone();
         char_slice.map_async(wgpu::MapMode::Read, move |r| {
-            let _ = tx_c.send(r);
+            let _ = tx_char.send(r);
         });
+        let tx_luminance = tx.clone();
         lum_slice.map_async(wgpu::MapMode::Read, move |r| {
-            let _ = tx_l.send(r);
+            let _ = tx_luminance.send(r);
         });
         color_slice.map_async(wgpu::MapMode::Read, move |r| {
-            let _ = tx_k.send(r);
+            let _ = tx.send(r);
         });
-        device.poll(wgpu::PollType::Wait).unwrap();
-        rx_c.recv().unwrap().unwrap();
-        rx_l.recv().unwrap().unwrap();
-        rx_k.recv().unwrap().unwrap();
+        device
+            .poll(wgpu::PollType::Wait)
+            .expect("GPU device lost while waiting for framebuffer readback");
+        for _ in 0..3 {
+            rx.recv()
+                .expect("GPU readback callback was dropped")
+                .expect("GPU framebuffer mapping failed");
+        }
 
-        let char_data = char_slice.get_mapped_range().to_vec();
-        let lum_data = lum_slice.get_mapped_range().to_vec();
-        let color_data = color_slice.get_mapped_range().to_vec();
-        self.readback_char_buffer.unmap();
-        self.readback_luminance_buffer.unmap();
-        self.readback_color_buffer.unmap();
+        // Consume mapped ranges directly instead of copying all three into
+        // temporary Vecs before copying them again into the framebuffer.
+        {
+            let char_data = char_slice.get_mapped_range();
+            let lum_data = lum_slice.get_mapped_range();
+            let color_data = color_slice.get_mapped_range();
+            let chars: &[u32] = bytemuck::cast_slice(&char_data);
+            let luminances: &[f32] = bytemuck::cast_slice(&lum_data);
+            let colors: &[f32] = bytemuck::cast_slice(&color_data);
 
-        // Populate framebuffer
-        let chars: &[u32] = bytemuck::cast_slice(&char_data);
-        let luminances: &[f32] = bytemuck::cast_slice(&lum_data);
-        let colors: &[f32] = bytemuck::cast_slice(&color_data);
-
-        fb.clear();
-        for i in 0..pixel_count {
-            fb.chars[i] = char::from(chars[i] as u8);
-            fb.luminances[i] = luminances[i];
-            if i * 3 + 2 < colors.len() {
+            fb.depth.fill(f32::INFINITY);
+            for i in 0..pixel_count {
+                fb.chars[i] = char::from_u32(chars[i]).unwrap_or(' ');
+                fb.luminances[i] = luminances[i];
                 fb.colors[i] = [colors[i * 3], colors[i * 3 + 1], colors[i * 3 + 2]];
             }
         }
+        self.readback_char_buffer.unmap();
+        self.readback_luminance_buffer.unmap();
+        self.readback_color_buffer.unmap();
     }
 }

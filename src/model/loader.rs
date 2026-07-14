@@ -40,6 +40,43 @@ fn reject_non_finite(mesh: &Mesh, path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Enforce the structural invariants assumed by both rasterizers. Parsers
+/// normally guarantee these, but keeping the check at the trust boundary makes
+/// a parser regression a clean load error instead of an indexing panic or GPU
+/// out-of-bounds access.
+fn validate_structure(mesh: &Mesh, path: &Path) -> Result<(), String> {
+    if mesh.vertices.is_empty() || mesh.indices.len() < 3 {
+        return Err(format!("{}: model contains no triangles", path.display()));
+    }
+    if mesh.indices.len() % 3 != 0 {
+        return Err(format!(
+            "{}: model has an incomplete triangle index list",
+            path.display()
+        ));
+    }
+    if mesh
+        .indices
+        .iter()
+        .any(|&index| index as usize >= mesh.vertices.len())
+    {
+        return Err(format!(
+            "{}: model has an out-of-range vertex index",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn finish_load(mut mesh: Mesh, path: &Path) -> Result<Mesh, String> {
+    validate_structure(&mesh, path)?;
+    reject_non_finite(&mesh, path)?;
+    mesh.normalize();
+    // `Mesh::normalize` is defensive, but verify the postcondition at this
+    // untrusted-input boundary as well.
+    reject_non_finite(&mesh, path)?;
+    Ok(mesh)
+}
+
 fn load_obj(path: &Path) -> Result<Mesh, String> {
     let (models, materials) = tobj::load_obj(
         path,
@@ -51,12 +88,29 @@ fn load_obj(path: &Path) -> Result<Mesh, String> {
     )
     .map_err(|e| format!("failed to load OBJ {}: {e}", path.display()))?;
 
-    let materials = materials.unwrap_or_default();
+    let materials = match materials {
+        Ok(materials) => materials,
+        Err(error) => {
+            // A missing/broken sidecar material should not make otherwise valid
+            // geometry unusable, but it should be diagnosable with RUST_LOG.
+            log::warn!(
+                "failed to load an OBJ material for {}: {error}",
+                path.display()
+            );
+            Vec::new()
+        }
+    };
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
 
     for model in &models {
         let mesh = &model.mesh;
+        if mesh.positions.len() % 3 != 0 {
+            return Err(format!(
+                "{}: OBJ parser returned an incomplete vertex position",
+                path.display()
+            ));
+        }
         let base = vertices.len() as u32;
 
         let mat_color = mesh
@@ -88,10 +142,7 @@ fn load_obj(path: &Path) -> Result<Mesh, String> {
         }
     }
 
-    let mut mesh = Mesh { vertices, indices };
-    reject_non_finite(&mesh, path)?;
-    mesh.normalize();
-    Ok(mesh)
+    finish_load(Mesh { vertices, indices }, path)
 }
 
 fn load_stl(path: &Path) -> Result<Mesh, String> {
@@ -120,10 +171,7 @@ fn load_stl(path: &Path) -> Result<Mesh, String> {
         indices.extend_from_slice(&[base, base + 1, base + 2]);
     }
 
-    let mut mesh = Mesh { vertices, indices };
-    reject_non_finite(&mesh, path)?;
-    mesh.normalize();
-    Ok(mesh)
+    finish_load(Mesh { vertices, indices }, path)
 }
 
 #[cfg(test)]
@@ -168,5 +216,15 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         let err = result.unwrap_err();
         assert!(err.contains("non-finite"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn rejects_empty_obj() {
+        let path = std::env::temp_dir().join(format!("a3d_empty_{}.obj", std::process::id()));
+        std::fs::write(&path, "# no geometry\n").unwrap();
+        let result = load_model(&path);
+        let _ = std::fs::remove_file(&path);
+        let err = result.unwrap_err();
+        assert!(err.contains("no triangles"), "unexpected error: {err}");
     }
 }

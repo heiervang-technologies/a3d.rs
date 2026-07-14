@@ -47,4 +47,40 @@ fn gpu_builds_and_renders_empty_mesh_without_crashing() {
         is_blank(&framebuffer_to_string(&fb)),
         "empty mesh should render blank on the GPU"
     );
+
+    // A programmatic mesh can bypass load_model's validation. Invalid
+    // triangles are ignored instead of reaching the shader as out-of-bounds
+    // vertex reads.
+    let invalid_mesh = Mesh {
+        vertices: vec![],
+        indices: vec![0, 1, u32::MAX],
+    };
+    let invalid_pipeline = RasterPipeline::new(&ctx, &invalid_mesh, W as u32, H as u32);
+    render_frame_gpu(
+        &mut fb,
+        &invalid_pipeline,
+        &ctx,
+        0.0,
+        0.0,
+        1.0,
+        LIGHT_DIR,
+        None,
+    );
+    assert!(is_blank(&framebuffer_to_string(&fb)));
+
+    // A stale pipeline used to panic while copying a larger GPU surface into a
+    // smaller framebuffer. The public wrapper now rejects the mismatch safely.
+    let mut smaller_fb = Framebuffer::new(W / 2, H / 2);
+    smaller_fb.set_pixel(0, 0, 0.0, 1.0, [1.0; 3]);
+    render_frame_gpu(
+        &mut smaller_fb,
+        &pipeline,
+        &ctx,
+        0.0,
+        0.0,
+        1.0,
+        LIGHT_DIR,
+        None,
+    );
+    assert!(is_blank(&framebuffer_to_string(&smaller_fb)));
 }

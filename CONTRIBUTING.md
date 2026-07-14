@@ -15,9 +15,9 @@ cargo build
 cargo run -- models/dog.stl
 ```
 
-A Vulkan-capable GPU is optional: a3d falls back to the CPU rasterizer when no
-adapter is available, so it builds and runs (and the test suite passes) on
-machines without a GPU.
+A compatible GPU is optional: a3d falls back to the CPU rasterizer when no
+adapter with the required 64-bit atomics is available, so it builds and runs
+(and the test suite passes) on machines without a GPU.
 
 ## Before opening a pull request
 
@@ -26,7 +26,8 @@ CI runs these on every PR and they must pass. Run them locally first:
 ```bash
 cargo fmt --all                                          # format
 cargo clippy --all-targets --all-features -- -D warnings # lint (warnings are errors)
-cargo test                                               # unit + snapshot + GPU-vs-CPU
+cargo test --all-features -- --test-threads=1
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
 ```
 
 If you make an intentional change to rendering output, regenerate the CPU

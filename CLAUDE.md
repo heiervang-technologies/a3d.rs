@@ -15,8 +15,9 @@ RUST_LOG=info cargo run -- model.obj   # debug logging
 
 ## Project Structure
 
-- `src/main.rs` — render loop, CLI args (clap), CPU triangle rasterizer
-- `src/gpu/` — wgpu context (Vulkan), 3-pass compute pipeline (transform → depth → shade) in `raster.wgsl`
+- `src/main.rs` — render loop and CLI args (clap)
+- `src/lib.rs` — public render API and CPU triangle rasterizer
+- `src/gpu/` — wgpu context, 3-pass compute pipeline (transform → depth → shade), and readback
 - `src/model/` — OBJ (tobj) and STL (stl_io) loading, mesh normalization
 - `src/render/` — camera (orbital, perspective), framebuffer (z-buffer + char grid), ASCII luminance mapping
 - `src/terminal/` — crossterm raw mode display, keyboard input
@@ -27,7 +28,7 @@ RUST_LOG=info cargo run -- model.obj   # debug logging
 - Plane-equation (triangle-normal) z-depth interpolation within triangles
 - Aspect ratio correction: `width / (height * 1.8)` for terminal characters
 - Golden ratio oscillation for smooth non-repeating auto-rotation
-- Model normalization to [-1, 1] on load
+- Model normalization to a unit sphere centered at the origin
 
 ## Conventions
 
