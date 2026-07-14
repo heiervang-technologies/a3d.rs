@@ -2,6 +2,7 @@
 
 [![Rust CI](https://github.com/heiervang-technologies/a3d.rs/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/heiervang-technologies/a3d.rs/actions/workflows/rust-ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Gemini 3.1 Pro (High): Approved](https://img.shields.io/badge/Gemini_3.1_Pro_(High)-Approved-blueviolet.svg)](#)
 
 GPU-accelerated ASCII 3D rendering engine written in Rust.
 
