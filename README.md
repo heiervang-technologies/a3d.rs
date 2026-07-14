@@ -5,7 +5,8 @@
 
 GPU-accelerated ASCII 3D rendering engine written in Rust.
 
-Renders 3D models (OBJ, STL) as real-time ASCII art in your terminal, using wgpu compute shaders (Vulkan) for rasterization and glam for SIMD-accelerated math.
+Renders 3D models (OBJ, STL) as real-time ASCII art in your terminal, using
+wgpu compute shaders or a CPU rasterizer and glam for vector math.
 
 Inspired by [voxcii](https://github.com/ashish0kumar/voxcii), rebuilt from scratch in Rust for memory safety, performance, and extensibility.
 
@@ -24,13 +25,13 @@ Inspired by [voxcii](https://github.com/ashish0kumar/voxcii), rebuilt from scrat
 - Interactive mode (arrow keys + zoom)
 - Automatic terminal resize handling
 - Aspect ratio correction for non-square terminal characters
-- wgpu GPU context initialization (Vulkan backend)
+- wgpu GPU rendering with automatic CPU fallback
 
 ## Requirements
 
 - Rust 1.85+ (2024 edition)
-- A Vulkan-capable GPU with 64-bit atomic min/max (`VK_KHR_shader_atomic_int64`)
-  for GPU rendering; without it a3d transparently falls back to the CPU renderer
+- For GPU rendering, a wgpu adapter with 64-bit atomic min/max; without one,
+  a3d transparently falls back to the CPU renderer
 - A terminal emulator
 
 ### Arch Linux
@@ -76,14 +77,16 @@ a3d model.obj --fps 60 --zoom 2.5
 | `<MODEL>` | | (required) | Path to OBJ or STL file |
 | `--fps` | `-f` | 30 | Target frames per second |
 | `--interactive` | `-i` | off | Manual rotation with arrow keys |
-| `--zoom` | `-z` | 1.0 | Initial zoom level |
+| `--zoom` | `-z` | 1.0 | Initial zoom level, from 0.1 to 10 |
 | `--color` | `-c` | off | Enable ANSI 24-bit true color output |
 | `--gpu` | | auto | Force GPU rendering (error if no adapter) |
 | `--cpu` | | auto | Force CPU rendering |
 | `--fg` | | model | Foreground color as hex, e.g. `ff6600` (implies `--color`) |
 | `--bg` | | none | Background color as hex, e.g. `1a1a2e` (implies `--color`) |
 
-By default a3d uses the GPU when an adapter is available and falls back to the CPU rasterizer otherwise.
+By default a3d briefly benchmarks both available renderers against the loaded
+model and current terminal size, then uses the faster one. `--cpu` and `--gpu`
+bypass the benchmark and force a backend.
 
 ### Controls (interactive mode)
 
@@ -94,7 +97,7 @@ By default a3d uses the GPU when an adapter is available and falls back to the C
 | `+` / `=` | Zoom in |
 | `-` | Zoom out |
 | `c` | Toggle color on/off |
-| `q` / `Esc` | Quit |
+| `q` / `Esc` / `Ctrl-C` | Quit |
 
 ### Debug logging
 
@@ -105,9 +108,10 @@ RUST_LOG=info a3d model.obj
 ## Development
 
 ```bash
-cargo test                # unit tests + CPU snapshot regression + GPU comparison
+cargo test --all-features -- --test-threads=1
 cargo clippy --all-targets --all-features -- -D warnings
 cargo fmt --all
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
 ```
 
 - **`gpu_compare`** renders the same scene on the CPU and GPU and asserts they
@@ -123,17 +127,18 @@ cargo fmt --all
   vhs assets/demo.tape
   ```
 
-CI runs `fmt --check`, `clippy -D warnings`, build, and the full test suite on
-every pull request.
+CI runs `fmt --check`, `clippy -D warnings`, rustdoc, the full test suite, and a
+separate Rust 1.85 MSRV check on every pull request.
 
 ## Architecture
 
 ```
 src/
-├── main.rs              # Render loop, CLI, CPU rasterizer
+├── main.rs              # CLI and interactive render loop
+├── lib.rs               # Shared CPU/GPU entry points + CPU rasterizer
 ├── gpu/
 │   ├── context.rs       # wgpu device/queue/adapter initialization
-│   ├── pipeline.rs      # GPU compute pipeline (3-pass: transform → depth → shade)
+│   ├── pipeline.rs      # GPU pipeline + synchronous framebuffer readback
 │   └── raster.wgsl      # Compute shader entry points
 ├── model/
 │   ├── loader.rs        # OBJ and STL file parsing
@@ -152,27 +157,21 @@ src/
 Model file (OBJ/STL)
     │
     ▼
-Load & parse ──▶ Normalize to [-1, 1]
+Load & parse ──▶ Center + fit to unit sphere
     │
     ▼
-┌─────────── Render Loop (30 FPS) ───────────┐
-│                                             │
-│  Clear framebuffer (depth = ∞)              │
-│       │                                     │
-│       ▼                                     │
-│  For each triangle:                         │
-│    ├─ Compute face normal (cross product)   │
-│    ├─ Directional lighting (dot product)    │
-│    ├─ Map luminance → ASCII char            │
-│    ├─ Project vertices (orthographic)       │
-│    └─ Rasterize with z-buffer               │
-│       │                                     │
-│       ▼                                     │
-│  Render to terminal (crossterm)             │
-│       │                                     │
-│       ▼                                     │
-│  Handle input / frame-rate limit            │
-└─────────────────────────────────────────────┘
+┌────────────── Render Loop ──────────────────┐
+│ CPU: transform/light/rasterize triangles     │
+│                  or                         │
+│ GPU: transform → atomic depth → shade        │
+│      → synchronous framebuffer readback      │
+│                    │                         │
+│                    ▼                         │
+│          ANSI terminal output                │
+│                    │                         │
+│                    ▼                         │
+│          input + frame-rate limit            │
+└──────────────────────────────────────────────┘
 ```
 
 ### ASCII Luminance Ramp
@@ -190,7 +189,7 @@ Luminance is computed as `dot(-face_normal, light_direction) * 0.5 + 0.5`, givin
 
 | Concern | Crate | Purpose |
 |---------|-------|---------|
-| GPU compute | `wgpu` | Vulkan compute shaders for rasterization |
+| GPU compute | `wgpu` | Portable compute shaders and device access |
 | CPU math | `glam` | SIMD-accelerated vectors and matrices |
 | Terminal | `crossterm` | Raw mode, cursor control, input events |
 | OBJ loading | `tobj` | Wavefront OBJ + MTL parsing |

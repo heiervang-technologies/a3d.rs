@@ -2,8 +2,9 @@
 
 ## Supported versions
 
-a3d is pre-1.0. Security fixes are applied to the latest `main` and the most
-recent release only.
+a3d is pre-1.0 and has not published a release yet. Security fixes are applied
+to the latest `main`; once releases exist, the most recent release will also be
+supported.
 
 ## Reporting a vulnerability
 

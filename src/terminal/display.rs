@@ -4,16 +4,18 @@ use std::io::{self, Stdout, Write};
 use crossterm::{
     ExecutableCommand, cursor,
     event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, MouseEvent,
-        MouseEventKind,
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+        KeyModifiers, MouseEvent, MouseEventKind,
     },
-    terminal,
+    style, terminal,
 };
 
 use crate::render::Framebuffer;
 
 /// Input events that the render loop cares about.
 pub enum InputEvent {
+    /// Quit requested with Ctrl-C.
+    Quit,
     /// A key press, carrying the crossterm [`KeyCode`].
     Key(KeyCode),
     /// Mouse wheel scrolled up (zoom in).
@@ -34,19 +36,26 @@ impl TerminalDisplay {
     /// Enter raw mode + the alternate screen, hide the cursor, and enable mouse
     /// capture. The terminal is restored when the returned handle is dropped.
     pub fn new() -> io::Result<Self> {
-        let mut stdout = io::stdout();
         terminal::enable_raw_mode()?;
-        stdout.execute(terminal::EnterAlternateScreen)?;
-        stdout.execute(cursor::Hide)?;
-        stdout.execute(EnableMouseCapture)?;
-        Ok(Self { stdout })
+        // Construct the RAII guard immediately after raw mode is enabled. If a
+        // later setup command fails, `?` drops it and restores the terminal.
+        let mut display = Self {
+            stdout: io::stdout(),
+        };
+        display.stdout.execute(terminal::EnterAlternateScreen)?;
+        display.stdout.execute(cursor::Hide)?;
+        display.stdout.execute(EnableMouseCapture)?;
+        Ok(display)
     }
 
     /// The terminal size in character cells `(width, height)`, falling back to
     /// `(80, 24)` if it can't be queried.
     pub fn size(&self) -> (usize, usize) {
         let (w, h) = terminal::size().unwrap_or((80, 24));
-        (w as usize, h as usize)
+        // Some terminals briefly report a zero dimension while minimized.
+        // wgpu rejects zero-sized storage buffers, so keep the render surface
+        // valid until the terminal reports its real size again.
+        (usize::from(w.max(1)), usize::from(h.max(1)))
     }
 
     /// Draw `fb` to the terminal: optional per-cell `color`, optional `bg`
@@ -77,7 +86,18 @@ impl TerminalDisplay {
                 break;
             }
             match event::read() {
-                Ok(Event::Key(KeyEvent { code, .. })) => events.push(InputEvent::Key(code)),
+                Ok(Event::Key(KeyEvent {
+                    code,
+                    modifiers,
+                    kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                    ..
+                })) => {
+                    if code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL) {
+                        events.push(InputEvent::Quit);
+                    } else {
+                        events.push(InputEvent::Key(code));
+                    }
+                }
                 Ok(Event::Mouse(MouseEvent { kind, .. })) => match kind {
                     MouseEventKind::ScrollUp => events.push(InputEvent::ScrollUp),
                     MouseEventKind::ScrollDown => events.push(InputEvent::ScrollDown),
@@ -172,7 +192,7 @@ pub(crate) fn frame_to_ansi(
 
     // Overlay text in top-right corner (e.g. FPS counter)
     if let Some(text) = overlay {
-        let col = term_width.saturating_sub(text.len()) + 1;
+        let col = term_width.saturating_sub(text.chars().count()) + 1;
         write!(buf, "\x1b[0m\x1b[1;{col}H{text}").unwrap();
     }
 
@@ -182,6 +202,7 @@ pub(crate) fn frame_to_ansi(
 impl Drop for TerminalDisplay {
     fn drop(&mut self) {
         let _ = self.stdout.execute(DisableMouseCapture);
+        let _ = self.stdout.execute(style::ResetColor);
         let _ = self.stdout.execute(cursor::Show);
         let _ = self.stdout.execute(terminal::LeaveAlternateScreen);
         let _ = terminal::disable_raw_mode();

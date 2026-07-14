@@ -9,10 +9,14 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -43,18 +47,16 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --no-deps --all-features
 
-      - name: Build
-        run: cargo build --verbose
-
       # gpu_compare skips itself when no Vulkan adapter is present, so the suite
       # stays green on GitHub-hosted (GPU-less) runners. The GPU path is exercised
       # locally on a Vulkan machine before release.
       - name: Run tests
-        run: cargo test --verbose -- --test-threads=1
+        run: cargo test --all-features --verbose -- --test-threads=1
 
   msrv:
     name: MSRV (1.85)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 

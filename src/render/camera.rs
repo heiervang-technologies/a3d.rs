@@ -2,10 +2,9 @@
 //!
 //! Currently unused: the renderer projects orthographically. Kept as scaffolding
 //! for the perspective-projection work planned in M3 (see the roadmap).
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Vec3, camera};
 
 /// An orbital camera positioned by azimuth, altitude, and distance from the origin.
-#[allow(dead_code)]
 pub struct Camera {
     /// Horizontal orbit angle in radians.
     pub azimuth: f32,
@@ -25,7 +24,6 @@ impl Default for Camera {
     }
 }
 
-#[allow(dead_code)]
 impl Camera {
     /// The right-handed view matrix looking from the orbit position at the origin.
     pub fn view_matrix(&self) -> Mat4 {
@@ -35,11 +33,23 @@ impl Camera {
             self.distance * self.azimuth.sin() * self.altitude.cos(),
         );
 
-        Mat4::look_at_rh(eye, Vec3::ZERO, Vec3::Y)
+        camera::rh::view::look_at_mat4(eye, Vec3::ZERO, Vec3::Y)
     }
 
     /// A right-handed perspective projection matrix for the given aspect ratio.
     pub fn projection(&self, aspect: f32) -> Mat4 {
-        Mat4::perspective_rh(std::f32::consts::FRAC_PI_4, aspect, 0.1, 100.0)
+        camera::rh::proj::directx::perspective(std::f32::consts::FRAC_PI_4, aspect, 0.1, 100.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_camera_matrices_are_finite() {
+        let camera = Camera::default();
+        assert!(camera.view_matrix().is_finite());
+        assert!(camera.projection(16.0 / 9.0).is_finite());
     }
 }

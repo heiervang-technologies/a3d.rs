@@ -18,7 +18,7 @@ uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/a3d
 
 test:
-	cargo test
+	cargo test --all-features -- --test-threads=1
 
 clean:
 	cargo clean

@@ -18,15 +18,26 @@ const H: usize = 24;
 /// Returns `None` when no GPU adapter is available, so callers can skip
 /// gracefully on GPU-less CI runners instead of failing the suite.
 fn compare(model: &str, az: f32, al: f32, zoom: f32) -> Option<(String, String, f64)> {
+    compare_at_size(model, az, al, zoom, W, H)
+}
+
+fn compare_at_size(
+    model: &str,
+    az: f32,
+    al: f32,
+    zoom: f32,
+    width: usize,
+    height: usize,
+) -> Option<(String, String, f64)> {
     let mesh = load_model(Path::new(model)).expect("model should load");
 
-    let mut cpu_fb = Framebuffer::new(W, H);
+    let mut cpu_fb = Framebuffer::new(width, height);
     render_frame(&mut cpu_fb, &mesh, az, al, zoom, LIGHT_DIR, None);
     let cpu_str = framebuffer_to_string(&cpu_fb);
 
     let ctx = pollster::block_on(GpuContext::new())?;
-    let pipeline = RasterPipeline::new(&ctx, &mesh, W as u32, H as u32);
-    let mut gpu_fb = Framebuffer::new(W, H);
+    let pipeline = RasterPipeline::new(&ctx, &mesh, width as u32, height as u32);
+    let mut gpu_fb = Framebuffer::new(width, height);
     render_frame_gpu(&mut gpu_fb, &pipeline, &ctx, az, al, zoom, LIGHT_DIR, None);
     let gpu_str = framebuffer_to_string(&gpu_fb);
 
@@ -37,6 +48,25 @@ fn compare(model: &str, az: f32, al: f32, zoom: f32) -> Option<(String, String, 
         .filter(|(c, g)| c != g)
         .count();
     Some((cpu_str, gpu_str, diffs as f64 / total as f64))
+}
+
+#[test]
+fn gpu_vs_cpu_high_resolution() {
+    let Some((cpu_str, _, ratio)) = compare_at_size("models/dog.stl", 0.7, 0.2, 1.0, 640, 192)
+    else {
+        eprintln!("Skipping gpu_vs_cpu_high_resolution: no GPU adapter available");
+        return;
+    };
+
+    assert!(
+        cpu_str.chars().any(|c| c != ' ' && c != '\n'),
+        "CPU render is blank — test fixture is broken"
+    );
+    assert!(
+        ratio < 0.005,
+        "high-resolution GPU render diverged from CPU by {:.2}%",
+        ratio * 100.0
+    );
 }
 
 #[test]

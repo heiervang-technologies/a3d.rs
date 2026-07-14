@@ -27,8 +27,8 @@ struct Args {
     #[arg(short, long)]
     interactive: bool,
 
-    /// Initial zoom level
-    #[arg(short, long, default_value_t = 1.0)]
+    /// Initial zoom level (0.1 to 10)
+    #[arg(short, long, default_value_t = 1.0, value_parser = parse_zoom)]
     zoom: f32,
 
     /// Enable ANSI true color output
@@ -57,10 +57,52 @@ fn parse_hex_color(s: &str) -> Result<[f32; 3], String> {
     if s.len() != 6 {
         return Err("expected 6 hex digits (e.g. ff6600)".to_string());
     }
-    let r = u8::from_str_radix(&s[0..2], 16).map_err(|e| e.to_string())?;
-    let g = u8::from_str_radix(&s[2..4], 16).map_err(|e| e.to_string())?;
-    let b = u8::from_str_radix(&s[4..6], 16).map_err(|e| e.to_string())?;
+    // Parse the whole value before splitting it. Byte-indexing a UTF-8 string
+    // can panic when a six-byte non-ASCII value lands between code points.
+    let rgb = u32::from_str_radix(s, 16)
+        .map_err(|_| "expected 6 hex digits (e.g. ff6600)".to_string())?;
+    let r = ((rgb >> 16) & 0xff) as u8;
+    let g = ((rgb >> 8) & 0xff) as u8;
+    let b = (rgb & 0xff) as u8;
     Ok([r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0])
+}
+
+fn parse_zoom(s: &str) -> Result<f32, String> {
+    let zoom = s
+        .parse::<f32>()
+        .map_err(|_| "expected a number from 0.1 to 10".to_string())?;
+    if zoom.is_finite() && (0.1..=10.0).contains(&zoom) {
+        Ok(zoom)
+    } else {
+        Err("expected a finite number from 0.1 to 10".to_string())
+    }
+}
+
+const BENCHMARK_TARGET: Duration = Duration::from_millis(10);
+const BENCHMARK_MIN_FRAMES: u32 = 3;
+const BENCHMARK_MAX_FRAMES: u32 = 30;
+
+/// Warm a renderer, then measure enough frames for a useful startup comparison
+/// without delaying launch excessively on slow or very large scenes.
+fn benchmark_renderer(mut render: impl FnMut(f32)) -> Duration {
+    render(0.31);
+
+    let start = Instant::now();
+    let mut frames = 0;
+    loop {
+        render(0.31 + frames as f32 * 0.017);
+        frames += 1;
+        let elapsed = start.elapsed();
+        if frames >= BENCHMARK_MIN_FRAMES
+            && (elapsed >= BENCHMARK_TARGET || frames >= BENCHMARK_MAX_FRAMES)
+        {
+            return Duration::from_secs_f64(elapsed.as_secs_f64() / f64::from(frames));
+        }
+    }
+}
+
+fn prefer_gpu(cpu_frame_time: Duration, gpu_frame_time: Duration) -> bool {
+    gpu_frame_time < cpu_frame_time
 }
 
 fn main() {
@@ -82,7 +124,7 @@ fn main() {
     );
 
     // Initialize GPU (optional)
-    let gpu_ctx = if args.cpu {
+    let mut gpu_ctx = if args.cpu {
         log::info!("CPU rendering forced");
         None
     } else {
@@ -98,20 +140,15 @@ fn main() {
     };
 
     // Setup terminal
-    let mut display = TerminalDisplay::new().expect("Failed to initialize terminal");
+    let mut display = match TerminalDisplay::new() {
+        Ok(display) => display,
+        Err(e) => {
+            eprintln!("error: failed to initialize terminal: {e}");
+            std::process::exit(1);
+        }
+    };
     let (w, h) = display.size();
     let mut fb = Framebuffer::new(w, h);
-
-    // Create GPU pipeline if available
-    let mut gpu_pipeline = gpu_ctx.as_ref().map(|ctx| {
-        log::info!("Using GPU rendering");
-        RasterPipeline::new(ctx, &mesh, w as u32, h as u32)
-    });
-
-    let use_gpu = gpu_pipeline.is_some();
-    if !use_gpu {
-        log::info!("Using CPU rendering");
-    }
 
     let mut azimuth: f32 = 0.0;
     let mut altitude: f32 = 0.0;
@@ -119,20 +156,58 @@ fn main() {
     let mut color = args.color;
     let fg_color = args.fg;
     let bg_color = args.bg;
+    let light_dir = Vec3::new(1.0, -1.0, 0.0).normalize();
 
     if fg_color.is_some() || bg_color.is_some() {
         color = true;
     }
 
+    // Create GPU pipeline if available
+    let mut gpu_pipeline = gpu_ctx
+        .as_ref()
+        .map(|ctx| RasterPipeline::new(ctx, &mesh, w as u32, h as u32));
+
+    // In automatic mode, compare the actual model and framebuffer after GPU
+    // pipeline creation. This captures triangle count, projected coverage,
+    // driver behavior, and synchronous readback cost better than a static size
+    // heuristic. Explicit --cpu/--gpu always bypass this choice.
+    if !args.gpu {
+        if let (Some(pipeline), Some(ctx)) = (gpu_pipeline.as_ref(), gpu_ctx.as_ref()) {
+            let cpu_frame_time = benchmark_renderer(|angle| {
+                render_frame(&mut fb, &mesh, angle, 0.2, zoom, light_dir, fg_color);
+                std::hint::black_box(&fb.chars);
+            });
+            let gpu_frame_time = benchmark_renderer(|angle| {
+                render_frame_gpu(
+                    &mut fb, pipeline, ctx, angle, 0.2, zoom, light_dir, fg_color,
+                );
+                std::hint::black_box(&fb.chars);
+            });
+            log::info!(
+                "Startup benchmark: CPU {:.3} ms/frame, GPU {:.3} ms/frame",
+                cpu_frame_time.as_secs_f64() * 1_000.0,
+                gpu_frame_time.as_secs_f64() * 1_000.0,
+            );
+            if !prefer_gpu(cpu_frame_time, gpu_frame_time) {
+                gpu_pipeline = None;
+                gpu_ctx = None;
+            }
+        }
+    }
+
+    log::info!(
+        "Using {} rendering",
+        if gpu_pipeline.is_some() { "GPU" } else { "CPU" }
+    );
+
     let frame_duration = Duration::from_secs_f64(1.0 / args.fps as f64);
     let start = Instant::now();
-    let light_dir = Vec3::new(1.0, -1.0, 0.0).normalize();
     let mut last_fps_update = Instant::now();
     let mut frame_count = 0u32;
     let mut current_fps = 0.0f32;
     let backend_label = if gpu_pipeline.is_some() { "GPU" } else { "CPU" };
 
-    loop {
+    let render_error = loop {
         let frame_start = Instant::now();
         let t = start.elapsed().as_secs_f32();
 
@@ -149,7 +224,9 @@ fn main() {
         let mut should_quit = false;
         for ev in display.poll_events() {
             match ev {
-                InputEvent::Key(KeyCode::Char('q') | KeyCode::Esc) => should_quit = true,
+                InputEvent::Quit | InputEvent::Key(KeyCode::Char('q') | KeyCode::Esc) => {
+                    should_quit = true
+                }
                 InputEvent::Key(KeyCode::Up | KeyCode::Char('k')) => altitude += 0.1,
                 InputEvent::Key(KeyCode::Down | KeyCode::Char('j')) => altitude -= 0.1,
                 InputEvent::Key(KeyCode::Left | KeyCode::Char('h')) => azimuth += 0.1,
@@ -165,7 +242,7 @@ fn main() {
             }
         }
         if should_quit {
-            break;
+            break None;
         }
 
         // Auto-rotate if not interactive
@@ -198,13 +275,22 @@ fn main() {
             None
         };
 
-        let _ = display.render(&fb, color, bg_color, fps_label.as_deref());
+        if let Err(e) = display.render(&fb, color, bg_color, fps_label.as_deref()) {
+            break Some(e);
+        }
 
         // Frame rate limiting
         let elapsed = frame_start.elapsed();
         if elapsed < frame_duration {
             std::thread::sleep(frame_duration - elapsed);
         }
+    };
+
+    // Restore the terminal before printing an error to the normal screen.
+    drop(display);
+    if let Some(e) = render_error {
+        eprintln!("error: failed to render terminal frame: {e}");
+        std::process::exit(1);
     }
 }
 
@@ -242,5 +328,31 @@ mod tests {
     fn rejects_non_hex() {
         assert!(parse_hex_color("gggggg").is_err());
         assert!(parse_hex_color("12345z").is_err());
+        assert!(parse_hex_color("aéaaa").is_err());
+    }
+
+    #[test]
+    fn zoom_is_finite_and_bounded() {
+        assert_eq!(parse_zoom("0.1").unwrap(), 0.1);
+        assert_eq!(parse_zoom("10").unwrap(), 10.0);
+        for invalid in ["0", "-1", "10.1", "NaN", "inf", "nope"] {
+            assert!(parse_zoom(invalid).is_err(), "accepted {invalid}");
+        }
+    }
+
+    #[test]
+    fn backend_selection_uses_the_faster_renderer() {
+        assert!(prefer_gpu(
+            Duration::from_millis(2),
+            Duration::from_millis(1)
+        ));
+        assert!(!prefer_gpu(
+            Duration::from_millis(1),
+            Duration::from_millis(2)
+        ));
+        assert!(!prefer_gpu(
+            Duration::from_millis(1),
+            Duration::from_millis(1)
+        ));
     }
 }
