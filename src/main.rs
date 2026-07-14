@@ -78,6 +78,33 @@ fn parse_zoom(s: &str) -> Result<f32, String> {
     }
 }
 
+const BENCHMARK_TARGET: Duration = Duration::from_millis(10);
+const BENCHMARK_MIN_FRAMES: u32 = 3;
+const BENCHMARK_MAX_FRAMES: u32 = 30;
+
+/// Warm a renderer, then measure enough frames for a useful startup comparison
+/// without delaying launch excessively on slow or very large scenes.
+fn benchmark_renderer(mut render: impl FnMut(f32)) -> Duration {
+    render(0.31);
+
+    let start = Instant::now();
+    let mut frames = 0;
+    loop {
+        render(0.31 + frames as f32 * 0.017);
+        frames += 1;
+        let elapsed = start.elapsed();
+        if frames >= BENCHMARK_MIN_FRAMES
+            && (elapsed >= BENCHMARK_TARGET || frames >= BENCHMARK_MAX_FRAMES)
+        {
+            return Duration::from_secs_f64(elapsed.as_secs_f64() / f64::from(frames));
+        }
+    }
+}
+
+fn prefer_gpu(cpu_frame_time: Duration, gpu_frame_time: Duration) -> bool {
+    gpu_frame_time < cpu_frame_time
+}
+
 fn main() {
     env_logger::init();
     let args = Args::parse();
@@ -97,7 +124,7 @@ fn main() {
     );
 
     // Initialize GPU (optional)
-    let gpu_ctx = if args.cpu {
+    let mut gpu_ctx = if args.cpu {
         log::info!("CPU rendering forced");
         None
     } else {
@@ -123,31 +150,58 @@ fn main() {
     let (w, h) = display.size();
     let mut fb = Framebuffer::new(w, h);
 
-    // Create GPU pipeline if available
-    let mut gpu_pipeline = gpu_ctx.as_ref().map(|ctx| {
-        log::info!("Using GPU rendering");
-        RasterPipeline::new(ctx, &mesh, w as u32, h as u32)
-    });
-
-    let use_gpu = gpu_pipeline.is_some();
-    if !use_gpu {
-        log::info!("Using CPU rendering");
-    }
-
     let mut azimuth: f32 = 0.0;
     let mut altitude: f32 = 0.0;
     let mut zoom = args.zoom;
     let mut color = args.color;
     let fg_color = args.fg;
     let bg_color = args.bg;
+    let light_dir = Vec3::new(1.0, -1.0, 0.0).normalize();
 
     if fg_color.is_some() || bg_color.is_some() {
         color = true;
     }
 
+    // Create GPU pipeline if available
+    let mut gpu_pipeline = gpu_ctx
+        .as_ref()
+        .map(|ctx| RasterPipeline::new(ctx, &mesh, w as u32, h as u32));
+
+    // In automatic mode, compare the actual model and framebuffer after GPU
+    // pipeline creation. This captures triangle count, projected coverage,
+    // driver behavior, and synchronous readback cost better than a static size
+    // heuristic. Explicit --cpu/--gpu always bypass this choice.
+    if !args.gpu {
+        if let (Some(pipeline), Some(ctx)) = (gpu_pipeline.as_ref(), gpu_ctx.as_ref()) {
+            let cpu_frame_time = benchmark_renderer(|angle| {
+                render_frame(&mut fb, &mesh, angle, 0.2, zoom, light_dir, fg_color);
+                std::hint::black_box(&fb.chars);
+            });
+            let gpu_frame_time = benchmark_renderer(|angle| {
+                render_frame_gpu(
+                    &mut fb, pipeline, ctx, angle, 0.2, zoom, light_dir, fg_color,
+                );
+                std::hint::black_box(&fb.chars);
+            });
+            log::info!(
+                "Startup benchmark: CPU {:.3} ms/frame, GPU {:.3} ms/frame",
+                cpu_frame_time.as_secs_f64() * 1_000.0,
+                gpu_frame_time.as_secs_f64() * 1_000.0,
+            );
+            if !prefer_gpu(cpu_frame_time, gpu_frame_time) {
+                gpu_pipeline = None;
+                gpu_ctx = None;
+            }
+        }
+    }
+
+    log::info!(
+        "Using {} rendering",
+        if gpu_pipeline.is_some() { "GPU" } else { "CPU" }
+    );
+
     let frame_duration = Duration::from_secs_f64(1.0 / args.fps as f64);
     let start = Instant::now();
-    let light_dir = Vec3::new(1.0, -1.0, 0.0).normalize();
     let mut last_fps_update = Instant::now();
     let mut frame_count = 0u32;
     let mut current_fps = 0.0f32;
@@ -284,5 +338,21 @@ mod tests {
         for invalid in ["0", "-1", "10.1", "NaN", "inf", "nope"] {
             assert!(parse_zoom(invalid).is_err(), "accepted {invalid}");
         }
+    }
+
+    #[test]
+    fn backend_selection_uses_the_faster_renderer() {
+        assert!(prefer_gpu(
+            Duration::from_millis(2),
+            Duration::from_millis(1)
+        ));
+        assert!(!prefer_gpu(
+            Duration::from_millis(1),
+            Duration::from_millis(2)
+        ));
+        assert!(!prefer_gpu(
+            Duration::from_millis(1),
+            Duration::from_millis(1)
+        ));
     }
 }

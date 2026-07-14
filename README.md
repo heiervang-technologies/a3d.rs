@@ -84,7 +84,9 @@ a3d model.obj --fps 60 --zoom 2.5
 | `--fg` | | model | Foreground color as hex, e.g. `ff6600` (implies `--color`) |
 | `--bg` | | none | Background color as hex, e.g. `1a1a2e` (implies `--color`) |
 
-By default a3d uses the GPU when an adapter is available and falls back to the CPU rasterizer otherwise.
+By default a3d briefly benchmarks both available renderers against the loaded
+model and current terminal size, then uses the faster one. `--cpu` and `--gpu`
+bypass the benchmark and force a backend.
 
 ### Controls (interactive mode)
 

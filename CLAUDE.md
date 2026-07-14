@@ -24,7 +24,8 @@ RUST_LOG=info cargo run -- model.obj   # debug logging
 
 ## Key Design Decisions
 
-- GPU compute pipeline (wgpu) renders by default; CPU rasterization is the fallback when no adapter is available
+- Automatic mode benchmarks CPU and GPU against the loaded model/terminal and
+  selects the faster renderer; `--cpu`/`--gpu` force a backend
 - Plane-equation (triangle-normal) z-depth interpolation within triangles
 - Aspect ratio correction: `width / (height * 1.8)` for terminal characters
 - Golden ratio oscillation for smooth non-repeating auto-rotation
