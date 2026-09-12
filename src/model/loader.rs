@@ -79,6 +79,82 @@ fn load_glb(path: &Path) -> Result<Mesh, String> {
     finish_load(mesh, path)
 }
 
+// gltf's reader assumes valid counts, strides, types, and byte ranges; its
+// JSON validation alone does not establish these invariants.
+fn validate_glb_accessor(accessor: &gltf::Accessor<'_>, blob: &[u8]) -> Result<(), String> {
+    let count = accessor.count();
+    let size = accessor.size();
+    // Sparse accessors can expand a tiny file into a huge allocation.
+    if count == 0 || count > (256 * 1024 * 1024) / size.max(16) {
+        return Err("accessor count is zero or exceeds the 256 MiB decoded limit".into());
+    }
+    if let Some(view) = accessor.view() {
+        checked_glb_range(&view, accessor.offset(), count, size, blob)?;
+    } else if accessor.sparse().is_none() {
+        return Err("accessor has neither a buffer view nor sparse values".into());
+    }
+    if let Some(sparse) = accessor.sparse() {
+        if sparse.count() == 0 || sparse.count() > count {
+            return Err("invalid sparse accessor count".into());
+        }
+        let indices = sparse.indices();
+        let values = sparse.values();
+        if indices.view().stride().is_some() || values.view().stride().is_some() {
+            return Err("sparse buffer views must not have a stride".into());
+        }
+        let index_size = indices.index_type().size();
+        let bytes = checked_glb_range(
+            &indices.view(),
+            indices.offset(),
+            sparse.count(),
+            index_size,
+            blob,
+        )?;
+        checked_glb_range(&values.view(), values.offset(), sparse.count(), size, blob)?;
+        let mut previous = None;
+        for bytes in bytes.chunks_exact(index_size) {
+            let mut word = [0; 4];
+            word[..index_size].copy_from_slice(bytes);
+            let index = u32::from_le_bytes(word) as usize;
+            if index >= count || previous.is_some_and(|previous| index <= previous) {
+                return Err("sparse indices must be increasing and within accessor bounds".into());
+            }
+            previous = Some(index);
+        }
+    }
+    Ok(())
+}
+
+fn checked_glb_range<'a>(
+    view: &gltf::buffer::View<'_>,
+    offset: usize,
+    count: usize,
+    size: usize,
+    blob: &'a [u8],
+) -> Result<&'a [u8], String> {
+    let invalid = || "accessor byte range or stride is invalid".to_string();
+    let stride = view.stride().unwrap_or(size);
+    if stride < size || count == 0 {
+        return Err(invalid());
+    }
+    let end = count
+        .checked_sub(1)
+        .and_then(|n| n.checked_mul(stride))
+        .and_then(|n| n.checked_add(size))
+        .and_then(|n| n.checked_add(offset))
+        .ok_or_else(invalid)?;
+    let view_end = view
+        .offset()
+        .checked_add(view.length())
+        .ok_or_else(invalid)?;
+    if end > view.length() || view_end > view.buffer().length() {
+        return Err(invalid());
+    }
+    blob.get(view.offset()..view_end)
+        .and_then(|bytes| bytes.get(offset..end))
+        .ok_or_else(invalid)
+}
+
 fn append_glb_mesh(
     node: gltf::Node<'_>,
     transform: glam::Mat4,
@@ -94,6 +170,49 @@ fn append_glb_mesh(
                     path.display(),
                     primitive.mode()
                 ));
+            }
+            use gltf::accessor::{DataType, Dimensions};
+            for (label, accessor) in [
+                ("position", primitive.get(&gltf::Semantic::Positions)),
+                ("normal", primitive.get(&gltf::Semantic::Normals)),
+                ("color", primitive.get(&gltf::Semantic::Colors(0))),
+                ("index", primitive.indices()),
+            ] {
+                if let Some(accessor) = accessor {
+                    let valid_type = match label {
+                        "position" | "normal" => {
+                            accessor.data_type() == DataType::F32
+                                && accessor.dimensions() == Dimensions::Vec3
+                        }
+                        "color" => {
+                            matches!(
+                                accessor.data_type(),
+                                DataType::F32 | DataType::U8 | DataType::U16
+                            ) && matches!(
+                                accessor.dimensions(),
+                                Dimensions::Vec3 | Dimensions::Vec4
+                            )
+                        }
+                        _ => {
+                            matches!(
+                                accessor.data_type(),
+                                DataType::U8 | DataType::U16 | DataType::U32
+                            ) && accessor.dimensions() == Dimensions::Scalar
+                        }
+                    };
+                    if !valid_type {
+                        return Err(format!(
+                            "{}: GLB {label} accessor has an invalid type",
+                            path.display()
+                        ));
+                    }
+                    validate_glb_accessor(&accessor, blob).map_err(|error| {
+                        format!(
+                            "{}: GLB {label} accessor is unreadable: {error}",
+                            path.display()
+                        )
+                    })?;
+                }
             }
             let reader = primitive.reader(|buffer| (buffer.index() == 0).then_some(blob));
             let positions: Vec<_> = reader
@@ -434,6 +553,82 @@ mod tests {
         let result = load_model(&path);
         std::fs::remove_file(path).unwrap();
         result
+    }
+
+    #[test]
+    fn rejects_malformed_accessor_layouts_without_panicking() {
+        for (from, to) in [
+            (r#""count":3"#, r#""count":0"#),
+            (r#""count":3"#, r#""count":9223372036854775808"#),
+            (r#""byteLength":36"#, r#""byteLength":36,"byteStride":4"#),
+            (r#""byteOffset":0"#, r#""byteOffset":18446744073709551615"#),
+            (
+                r#""bufferView":0"#,
+                r#""bufferView":0,"byteOffset":18446744073709551615"#,
+            ),
+            (r#""type":"VEC3""#, r#""type":"VEC2""#),
+            (r#""componentType":5123"#, r#""componentType":5126"#),
+            (r#""POSITION":0"#, r#""POSITION":0,"NORMAL":1"#),
+            (r#""POSITION":0"#, r#""POSITION":0,"COLOR_0":1"#),
+        ] {
+            let result = load_bytes(edited_glb(|json, _| json.replace(from, to)));
+            assert!(result.is_err(), "accepted {from} -> {to}");
+        }
+    }
+
+    fn sparse_glb(edit: impl FnOnce(String, &mut Vec<u8>) -> String) -> Vec<u8> {
+        edited_glb(|json, binary| {
+            let positions = binary[..36].to_vec();
+            binary.extend_from_slice(&[0, 1, 2, 0]);
+            binary.extend_from_slice(&positions);
+            let json = json
+                .replace(r#""byteLength":44"#, r#""byteLength":84"#)
+                .replace(
+                    r#""byteLength":6}]"#,
+                    r#""byteLength":6},{"buffer":0,"byteOffset":44,"byteLength":3},{"buffer":0,"byteOffset":48,"byteLength":36}]"#,
+                )
+                .replace(
+                    r#""bufferView":0,"componentType"#,
+                    r#""sparse":{"count":3,"indices":{"bufferView":2,"componentType":5121},"values":{"bufferView":3}},"componentType"#,
+                );
+            edit(json, binary)
+        })
+    }
+
+    #[test]
+    fn loads_sparse_positions_and_rejects_invalid_sparse_layouts() {
+        let expected = load_bytes(test_glb()).unwrap();
+        let actual = load_bytes(sparse_glb(|json, _| json)).unwrap();
+        assert_eq!(actual.indices, expected.indices);
+        for (actual, expected) in actual.vertices.iter().zip(&expected.vertices) {
+            assert_eq!(actual.position, expected.position);
+        }
+        for (from, to) in [
+            (r#""sparse":{"count":3"#, r#""sparse":{"count":0"#),
+            (r#""sparse":{"count":3"#, r#""sparse":{"count":4"#),
+            (r#""byteLength":3"#, r#""byteLength":2"#),
+            (r#""byteOffset":48"#, r#""byteOffset":80"#),
+            (
+                r#""values":{"bufferView":3}"#,
+                r#""values":{"bufferView":3,"byteOffset":18446744073709551615}"#,
+            ),
+            (
+                r#""indices":{"bufferView":2"#,
+                r#""indices":{"byteOffset":18446744073709551615,"bufferView":2"#,
+            ),
+            (r#""byteLength":3"#, r#""byteLength":3,"byteStride":4"#),
+        ] {
+            assert!(load_bytes(sparse_glb(|json, _| json.replace(from, to))).is_err());
+        }
+        for indices in [[0, 0, 2], [2, 1, 0], [0, 1, 3]] {
+            assert!(
+                load_bytes(sparse_glb(|json, binary| {
+                    binary[44..47].copy_from_slice(&indices);
+                    json
+                }))
+                .is_err()
+            );
+        }
     }
 
     #[test]

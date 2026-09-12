@@ -98,7 +98,15 @@ these failures exit with an error after restoring the terminal.
 
 Single-frame mode always uses the CPU renderer and writes only the requested
 ASCII frame to standard output. It does not initialize a terminal or GPU, so it
-can be embedded in status bars and other non-interactive scripts.
+can be embedded in status bars and other non-interactive scripts. Combining
+`--frame` with `--gpu` is an argument error.
+
+GLB loading supports triangle primitives in the default scene (or first scene
+if no default is specified), embedded binary buffers, node transforms, and
+base-material/vertex colors, including sparse accessors. It does not apply
+textures, animation, skinning, or morph targets; other primitive topologies and
+external buffers are rejected. Each decoded accessor is limited to 256 MiB,
+budgeting at least 16 bytes per element to bound sparse expansion.
 
 ### Controls (interactive mode)
 
@@ -202,6 +210,9 @@ is required.
 `Result` so library callers can handle GPU failures or render on CPU. GPU render
 errors clear the framebuffer. A resize limit error preserves the pipeline;
 a GPU allocation/device error requires discarding it and building a new one.
+Library callers migrating from the previous API must handle the returned
+`Result` (for example, with `?`) and create contexts with `GpuContext::new()`;
+the context now contains private device-loss state.
 
 ### ASCII Luminance Ramp
 

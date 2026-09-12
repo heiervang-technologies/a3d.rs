@@ -52,7 +52,7 @@ struct Args {
     bg: Option<[f32; 3]>,
 
     /// Render one plain-text frame at WIDTHxHEIGHT and exit
-    #[arg(long, value_parser = parse_frame_size)]
+    #[arg(long, value_parser = parse_frame_size, conflicts_with = "gpu")]
     frame: Option<(usize, usize)>,
 
     /// Animation time used by --frame, in seconds

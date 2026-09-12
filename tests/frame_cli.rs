@@ -3,6 +3,18 @@
 use std::process::Command;
 
 #[test]
+fn frame_rejects_forced_gpu() {
+    let output = Command::new(env!("CARGO_BIN_EXE_a3d"))
+        .args(["models/dog.stl", "--frame", "8x6", "--gpu"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("cannot be used with"), "{stderr}");
+}
+
+#[test]
 fn renders_exact_requested_frame_dimensions() {
     let output = Command::new(env!("CARGO_BIN_EXE_a3d"))
         .args(["models/dog.stl", "--frame", "8x6", "--time", "3.5"])

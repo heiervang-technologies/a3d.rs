@@ -25,7 +25,11 @@ model parsing is delegated to the `tobj`, `stl_io`, and `gltf` crates.
 `load_model` surfaces malformed, missing, empty, and non-finite-coordinate
 files as clean errors rather than panicking. GLB scene traversal is iterative
 and rejects cycles/repeated nodes before expanding geometry; declared binary
-buffers and index accessors must be readable. A crafted binary-STL triangle
+buffers and consumed accessors must be readable. Accessor types, counts,
+strides, and byte ranges are checked before reader construction, including
+sparse values and ordered, in-range sparse indices. Each accessor has a
+256 MiB decoded budget (at least 16 bytes per element); this limits sparse
+expansion, but is not a total file or scene memory limit. A crafted binary-STL triangle
 count does not trigger unbounded allocation (the parser reads lazily). The
 underlying model parsers are not exhaustively audited, so reports of
 any remaining panic, hang, or unbounded allocation reachable from a crafted
