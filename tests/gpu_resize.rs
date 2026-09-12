@@ -15,7 +15,7 @@ const LIGHT_DIR: Vec3 = Vec3::new(0.70710677, -0.70710677, 0.0);
 
 fn render(pipeline: &RasterPipeline, ctx: &GpuContext, w: usize, h: usize) -> String {
     let mut fb = Framebuffer::new(w, h);
-    render_frame_gpu(&mut fb, pipeline, ctx, 0.0, 0.0, 1.0, LIGHT_DIR, None);
+    render_frame_gpu(&mut fb, pipeline, ctx, 0.0, 0.0, 1.0, LIGHT_DIR, None).unwrap();
     framebuffer_to_string(&fb)
 }
 
@@ -30,9 +30,9 @@ fn resized_pipeline_matches_fresh_one() {
     // A pipeline built small, then resized up, must match a pipeline built
     // directly at the target size — proving resize rebuilt the buffers and bind
     // group correctly (a stale buffer would diverge or crash).
-    let mut resized = RasterPipeline::new(&ctx, &mesh, 40, 12);
-    resized.resize(&ctx, 100, 30);
-    let fresh = RasterPipeline::new(&ctx, &mesh, 100, 30);
+    let mut resized = RasterPipeline::new(&ctx, &mesh, 40, 12).unwrap();
+    resized.resize(&ctx, 100, 30).unwrap();
+    let fresh = RasterPipeline::new(&ctx, &mesh, 100, 30).unwrap();
 
     assert_eq!(
         render(&resized, &ctx, 100, 30),
@@ -41,8 +41,8 @@ fn resized_pipeline_matches_fresh_one() {
     );
 
     // Resizing back down must work too (buffers shrink, no leftover rows).
-    resized.resize(&ctx, 60, 20);
-    let fresh_small = RasterPipeline::new(&ctx, &mesh, 60, 20);
+    resized.resize(&ctx, 60, 20).unwrap();
+    let fresh_small = RasterPipeline::new(&ctx, &mesh, 60, 20).unwrap();
     assert_eq!(
         render(&resized, &ctx, 60, 20),
         render(&fresh_small, &ctx, 60, 20),

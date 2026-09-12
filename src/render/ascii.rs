@@ -6,8 +6,8 @@ pub fn luminance_to_char(luminance: f32) -> char {
     let clamped = luminance.clamp(0.0, 1.0);
     // `round_ties_even` matches WGSL `round` (round half to even); the GPU shader
     // rounds the same way, so CPU and GPU pick identical ramp characters at
-    // exact half-bucket luminances. This is what keeps the two backends
-    // byte-identical (see the `gpu_compare` pixel-for-pixel invariant).
+    // exact half-bucket luminances. Earlier lighting/geometry calculations can
+    // still differ across backends; see the crate's rendering contract.
     let idx = (clamped * (ASCII_RAMP.len() - 1) as f32).round_ties_even() as usize;
     let idx = idx.min(ASCII_RAMP.len() - 1);
     ASCII_RAMP[idx] as char

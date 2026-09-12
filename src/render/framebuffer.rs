@@ -9,7 +9,8 @@ pub struct Framebuffer {
     pub width: usize,
     /// Height in character cells.
     pub height: usize,
-    /// Per-cell depth (z-buffer); nearer is smaller, cleared to `+∞`.
+    /// Per-cell CPU depth (z-buffer); nearer is smaller, cleared to `+∞`.
+    /// GPU rendering leaves this grid at `+∞` because depth is not read back.
     pub depth: Vec<f32>,
     /// Per-cell ASCII character, cleared to a space.
     pub chars: Vec<char>,
