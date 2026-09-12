@@ -17,14 +17,16 @@ We aim to acknowledge reports within a few days.
 
 ## Scope notes
 
-a3d is an offline terminal renderer. It parses untrusted model files (OBJ/STL),
+a3d is an offline terminal renderer. It parses untrusted model files (OBJ/STL/GLB),
 so the most likely concerns are crashes or excessive resource use on malformed
 input rather than remote attacks. The crate is `#![forbid(unsafe_code)]`, and
-model parsing is delegated to the `tobj` and `stl_io` crates.
+model parsing is delegated to the `tobj`, `stl_io`, and `gltf` crates.
 
 `load_model` surfaces malformed, missing, empty, and non-finite-coordinate
-files as clean errors rather than panicking, and a crafted binary-STL triangle
+files as clean errors rather than panicking. GLB scene traversal is iterative
+and rejects cycles/repeated nodes before expanding geometry; declared binary
+buffers and index accessors must be readable. A crafted binary-STL triangle
 count does not trigger unbounded allocation (the parser reads lazily). The
-underlying `tobj`/`stl_io` parsers are not exhaustively audited, so reports of
+underlying model parsers are not exhaustively audited, so reports of
 any remaining panic, hang, or unbounded allocation reachable from a crafted
 model file are still welcome.

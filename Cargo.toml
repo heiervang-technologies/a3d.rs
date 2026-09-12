@@ -24,6 +24,7 @@ bytemuck = { version = "1", features = ["derive"] }
 log = "0.4"
 env_logger = "0.11"
 stl_io = "0.11"
+gltf = { version = "1.4", default-features = false, features = ["utils"] }
 
 [profile.release]
 # Strip symbols from the release binary — ~21% smaller (8.9 MB -> 7.0 MB) with

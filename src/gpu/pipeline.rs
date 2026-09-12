@@ -32,6 +32,7 @@ pub(crate) struct GpuUniforms {
 
 /// GPU compute pipeline for rasterization.
 pub struct RasterPipeline {
+    usable: bool,
     vertex_transform_pipeline: wgpu::ComputePipeline,
     rasterize_depth_pipeline: wgpu::ComputePipeline,
     rasterize_shade_pipeline: wgpu::ComputePipeline,
@@ -70,7 +71,19 @@ impl RasterPipeline {
     /// Build a pipeline for `mesh` rendering into a `width`×`height` framebuffer.
     /// Uploads the mesh once; reuse the pipeline across frames and call
     /// [`resize`](Self::resize) when the terminal size changes.
-    pub fn new(ctx: &GpuContext, mesh: &Mesh, width: u32, height: u32) -> Self {
+    /// Returns an error if resources exceed device limits or GPU setup fails.
+    pub fn new(ctx: &GpuContext, mesh: &Mesh, width: u32, height: u32) -> Result<Self, String> {
+        validate_limits(
+            &ctx.device.limits(),
+            mesh.vertices.len(),
+            mesh.indices.len(),
+            width,
+            height,
+        )?;
+        ctx.checked(|| Ok(Self::build(ctx, mesh, width, height)))
+    }
+
+    fn build(ctx: &GpuContext, mesh: &Mesh, width: u32, height: u32) -> Self {
         let device = &ctx.device;
         let width = width.max(1);
         let height = height.max(1);
@@ -367,6 +380,7 @@ impl RasterPipeline {
         });
 
         Self {
+            usable: true,
             vertex_transform_pipeline,
             rasterize_depth_pipeline,
             rasterize_shade_pipeline,
@@ -399,7 +413,31 @@ impl RasterPipeline {
     }
 
     /// Resize framebuffer-dependent buffers. Must be called when terminal size changes.
-    pub fn resize(&mut self, ctx: &GpuContext, width: u32, height: u32) {
+    /// Returns an error on allocation/device failure. After such a failure,
+    /// discard the pipeline; rendering will return an error until it is rebuilt.
+    /// A dimensions-limit error leaves the existing pipeline unchanged.
+    pub fn resize(&mut self, ctx: &GpuContext, width: u32, height: u32) -> Result<(), String> {
+        validate_limits(
+            &ctx.device.limits(),
+            self.num_vertices as usize,
+            self.num_triangles as usize * 3,
+            width,
+            height,
+        )?;
+        if !self.usable {
+            return Err("GPU pipeline must be rebuilt after an allocation failure".into());
+        }
+        let result = ctx.checked(|| {
+            self.resize_buffers(ctx, width, height);
+            Ok(())
+        });
+        if result.is_err() {
+            self.usable = false;
+        }
+        result
+    }
+
+    fn resize_buffers(&mut self, ctx: &GpuContext, width: u32, height: u32) {
         let width = width.max(1);
         let height = height.max(1);
         if width == self.fb_width && height == self.fb_height {
@@ -515,7 +553,36 @@ impl RasterPipeline {
     /// Render a frame on the GPU and read results back into the framebuffer.
     /// Run the 3 compute passes and read the result back into `fb`. Internal —
     /// callers use [`render_frame_gpu`](crate::render_frame_gpu).
-    pub(crate) fn render(&self, ctx: &GpuContext, fb: &mut Framebuffer, uniforms: &GpuUniforms) {
+    pub(crate) fn render(
+        &self,
+        ctx: &GpuContext,
+        fb: &mut Framebuffer,
+        uniforms: &GpuUniforms,
+    ) -> Result<(), String> {
+        if !self.usable {
+            return Err("GPU pipeline must be rebuilt after an allocation failure".into());
+        }
+        let result = ctx.checked(|| {
+            let result = self.render_inner(ctx, fb, uniforms);
+            // Cleanup stays inside the error scopes: device loss can destroy
+            // these buffers, making even unmap a fallible GPU operation.
+            self.readback_char_buffer.unmap();
+            self.readback_luminance_buffer.unmap();
+            self.readback_color_buffer.unmap();
+            result
+        });
+        if result.is_err() {
+            fb.clear();
+        }
+        result
+    }
+
+    fn render_inner(
+        &self,
+        ctx: &GpuContext,
+        fb: &mut Framebuffer,
+        uniforms: &GpuUniforms,
+    ) -> Result<(), String> {
         let device = &ctx.device;
         let queue = &ctx.queue;
         let pixel_count = usize::try_from(u64::from(self.fb_width) * u64::from(self.fb_height))
@@ -633,11 +700,11 @@ impl RasterPipeline {
         });
         device
             .poll(wgpu::PollType::Wait)
-            .expect("GPU device lost while waiting for framebuffer readback");
+            .map_err(|error| format!("GPU framebuffer wait failed: {error}"))?;
         for _ in 0..3 {
             rx.recv()
-                .expect("GPU readback callback was dropped")
-                .expect("GPU framebuffer mapping failed");
+                .map_err(|error| format!("GPU readback callback was dropped: {error}"))?
+                .map_err(|error| format!("GPU framebuffer mapping failed: {error}"))?;
         }
 
         // Consume mapped ranges directly instead of copying all three into
@@ -657,8 +724,70 @@ impl RasterPipeline {
                 fb.colors[i] = [colors[i * 3], colors[i * 3 + 1], colors[i * 3 + 2]];
             }
         }
-        self.readback_char_buffer.unmap();
-        self.readback_luminance_buffer.unmap();
-        self.readback_color_buffer.unmap();
+        Ok(())
+    }
+}
+
+// Preflight before any GPU or host-side buffer allocation. The shader indexes
+// packed vertex/color arrays with u32 and dispatches along a single axis.
+fn validate_limits(
+    limits: &wgpu::Limits,
+    vertices: usize,
+    indices: usize,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    let vertices = u32::try_from(vertices).map_err(|_| "too many GPU vertices")?;
+    let indices = u32::try_from(indices).map_err(|_| "too many GPU indices")?;
+    let pixels = u64::from(width.max(1)) * u64::from(height.max(1));
+    if pixels > u64::from(u32::MAX / 3) || u64::from(vertices) * 9 > u64::from(u32::MAX) {
+        return Err("GPU dimensions exceed shader indexing limits".into());
+    }
+    if vertices.div_ceil(256) > limits.max_compute_workgroups_per_dimension
+        || (indices / 3).div_ceil(64) > limits.max_compute_workgroups_per_dimension
+    {
+        return Err("mesh exceeds GPU dispatch limits".into());
+    }
+    for (label, bytes) in [
+        ("vertices", (u64::from(vertices) * 36).max(4)),
+        ("indices", (u64::from(indices) * 4).max(4)),
+        ("transformed vertices", (u64::from(vertices) * 16).max(16)),
+        ("depth", pixels * 8),
+        ("characters", pixels * 4),
+        ("colors", pixels * 12),
+    ] {
+        if bytes > limits.max_buffer_size
+            || bytes > u64::from(limits.max_storage_buffer_binding_size)
+            || bytes > isize::MAX as u64
+        {
+            return Err(format!(
+                "{label} buffer ({bytes} bytes) exceeds GPU or host limits"
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_limits;
+
+    #[test]
+    fn dispatch_limits_are_checked_without_allocating_meshes() {
+        let limits = wgpu::Limits {
+            max_compute_workgroups_per_dimension: 1,
+            ..Default::default()
+        };
+        assert!(validate_limits(&limits, 256, 64 * 3, 80, 24).is_ok());
+        assert!(
+            validate_limits(&limits, 257, 3, 80, 24)
+                .unwrap_err()
+                .contains("dispatch")
+        );
+        assert!(
+            validate_limits(&limits, 3, 65 * 3, 80, 24)
+                .unwrap_err()
+                .contains("dispatch")
+        );
     }
 }

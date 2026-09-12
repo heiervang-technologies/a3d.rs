@@ -5,7 +5,7 @@
 
 GPU-accelerated ASCII 3D rendering engine written in Rust.
 
-Renders 3D models (OBJ, STL) as real-time ASCII art in your terminal, using
+Renders 3D models (OBJ, STL, GLB) as real-time ASCII art in your terminal, using
 wgpu compute shaders or a CPU rasterizer and glam for vector math.
 
 Inspired by [voxcii](https://github.com/ashish0kumar/voxcii), rebuilt from scratch in Rust for memory safety, performance, and extensibility.
@@ -21,6 +21,7 @@ Inspired by [voxcii](https://github.com/ashish0kumar/voxcii), rebuilt from scrat
 - Orthographic projection with terminal aspect-ratio correction
 - OBJ format support (with MTL material colors)
 - STL format support (binary and ASCII)
+- GLB format support (geometry, node transforms, vertex/material colors)
 - Auto-rotation with golden ratio oscillation
 - Interactive mode (arrow keys + zoom)
 - Automatic terminal resize handling
@@ -68,13 +69,16 @@ a3d model.obj --color
 
 # Custom FPS and zoom
 a3d model.obj --fps 60 --zoom 2.5
+
+# Render one terminal-independent text frame (useful for scripts/status bars)
+a3d model.glb --frame 12x10 --time 4.5
 ```
 
 ### CLI Options
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
-| `<MODEL>` | | (required) | Path to OBJ or STL file |
+| `<MODEL>` | | (required) | Path to OBJ, STL, or GLB file |
 | `--fps` | `-f` | 30 | Target frames per second |
 | `--interactive` | `-i` | off | Manual rotation with arrow keys |
 | `--zoom` | `-z` | 1.0 | Initial zoom level, from 0.1 to 10 |
@@ -83,10 +87,18 @@ a3d model.obj --fps 60 --zoom 2.5
 | `--cpu` | | auto | Force CPU rendering |
 | `--fg` | | model | Foreground color as hex, e.g. `ff6600` (implies `--color`) |
 | `--bg` | | none | Background color as hex, e.g. `1a1a2e` (implies `--color`) |
+| `--frame` | | off | Render one plain-text frame at `WIDTHxHEIGHT`, then exit |
+| `--time` | | 0 | Animation time in seconds for `--frame` |
 
 By default a3d briefly benchmarks both available renderers against the loaded
 model and current terminal size, then uses the faster one. `--cpu` and `--gpu`
-bypass the benchmark and force a backend.
+bypass the benchmark and force a backend. In automatic mode, GPU setup,
+allocation, resize, or readback failures switch to CPU rendering. With `--gpu`,
+these failures exit with an error after restoring the terminal.
+
+Single-frame mode always uses the CPU renderer and writes only the requested
+ASCII frame to standard output. It does not initialize a terminal or GPU, so it
+can be embedded in status bars and other non-interactive scripts.
 
 ### Controls (interactive mode)
 
@@ -114,9 +126,12 @@ cargo fmt --all
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
 ```
 
-- **`gpu_compare`** renders the same scene on the CPU and GPU and asserts they
-  match; it skips automatically when no GPU adapter is present, so the suite is
-  green on GPU-less machines.
+- **`gpu_compare`** checks the sample scene with a tolerance of less than 0.5%
+  differing ASCII cells (1% for the zoom sweep). Synthetic colored/overlapping
+  triangles require exact ASCII output and color/luminance differences at most
+  `1e-5`. GPU tests skip when no suitable adapter is present.
+- **`gpu_failures`** checks resource-limit errors and deliberate device loss,
+  including CPU rendering after a GPU error.
 - **Regenerate the CPU snapshots** after an intentional rendering change:
   ```bash
   cargo test --test gen_snapshots -- --ignored
@@ -141,7 +156,7 @@ src/
 │   ├── pipeline.rs      # GPU pipeline + synchronous framebuffer readback
 │   └── raster.wgsl      # Compute shader entry points
 ├── model/
-│   ├── loader.rs        # OBJ and STL file parsing
+│   ├── loader.rs        # OBJ, STL, and GLB file parsing
 │   └── mesh.rs          # Vertex/Mesh types, normalization
 ├── render/
 │   ├── ascii.rs         # ASCII luminance ramp mapping
@@ -154,7 +169,7 @@ src/
 ### Rendering Pipeline
 
 ```
-Model file (OBJ/STL)
+Model file (OBJ/STL/GLB)
     │
     ▼
 Load & parse ──▶ Center + fit to unit sphere
@@ -173,6 +188,20 @@ Load & parse ──▶ Center + fit to unit sphere
 │          input + frame-rate limit            │
 └──────────────────────────────────────────────┘
 ```
+
+### CPU/GPU output contract
+
+Both backends use flat shading and the first vertex's color for each triangle.
+Floating-point rounding and GPU depth quantization mean arbitrary scenes are
+not guaranteed byte-identical. Characters, colors, and luminances are the
+shared outputs; GPU rendering leaves `Framebuffer::depth` at infinity because
+it does not read back depth. Use CPU rendering when CPU-side depth compositing
+is required.
+
+`RasterPipeline::new`, `RasterPipeline::resize`, and `render_frame_gpu` return
+`Result` so library callers can handle GPU failures or render on CPU. GPU render
+errors clear the framebuffer. A resize limit error preserves the pipeline;
+a GPU allocation/device error requires discarding it and building a new one.
 
 ### ASCII Luminance Ramp
 
@@ -194,6 +223,7 @@ Luminance is computed as `dot(-face_normal, light_direction) * 0.5 + 0.5`, givin
 | Terminal | `crossterm` | Raw mode, cursor control, input events |
 | OBJ loading | `tobj` | Wavefront OBJ + MTL parsing |
 | STL loading | `stl_io` | Binary and ASCII STL parsing |
+| GLB loading | `gltf` | Binary glTF geometry and scene parsing |
 | CLI | `clap` | Argument parsing with derive macros |
 | GPU data | `bytemuck` | Safe transmutes for GPU buffer data |
 | Logging | `log` + `env_logger` | Debug and info logging |

@@ -11,12 +11,12 @@ use a3d::gpu::{GpuContext, RasterPipeline};
 use a3d::model::load_model;
 use a3d::render::Framebuffer;
 use a3d::terminal::{InputEvent, TerminalDisplay};
-use a3d::{AL_SPEED, AZ_SPEED, render_frame, render_frame_gpu};
+use a3d::{AL_SPEED, AZ_SPEED, framebuffer_to_string, render_frame, render_frame_gpu};
 
 #[derive(Parser)]
 #[command(name = "a3d", about = "GPU-accelerated ASCII 3D renderer")]
 struct Args {
-    /// Path to 3D model file (OBJ or STL)
+    /// Path to 3D model file (OBJ, STL, or GLB)
     model: PathBuf,
 
     /// Target frames per second
@@ -50,6 +50,41 @@ struct Args {
     /// Background color as hex (e.g. 1a1a2e or #1a1a2e)
     #[arg(long, value_parser = parse_hex_color)]
     bg: Option<[f32; 3]>,
+
+    /// Render one plain-text frame at WIDTHxHEIGHT and exit
+    #[arg(long, value_parser = parse_frame_size)]
+    frame: Option<(usize, usize)>,
+
+    /// Animation time used by --frame, in seconds
+    #[arg(long, default_value_t = 0.0, requires = "frame", value_parser = parse_frame_time)]
+    time: f32,
+}
+
+fn parse_frame_size(value: &str) -> Result<(usize, usize), String> {
+    let (width, height) = value
+        .split_once('x')
+        .ok_or_else(|| "expected WIDTHxHEIGHT (for example 8x10)".to_string())?;
+    let width = width
+        .parse::<usize>()
+        .map_err(|_| "frame width must be a positive integer".to_string())?;
+    let height = height
+        .parse::<usize>()
+        .map_err(|_| "frame height must be a positive integer".to_string())?;
+    if width == 0 || height == 0 || width > 256 || height > 256 {
+        return Err("frame dimensions must each be from 1 to 256".to_string());
+    }
+    Ok((width, height))
+}
+
+fn parse_frame_time(value: &str) -> Result<f32, String> {
+    let time = value
+        .parse::<f32>()
+        .map_err(|_| "time must be a non-negative number".to_string())?;
+    if time.is_finite() && time >= 0.0 {
+        Ok(time)
+    } else {
+        Err("time must be a finite non-negative number".to_string())
+    }
 }
 
 fn parse_hex_color(s: &str) -> Result<[f32; 3], String> {
@@ -105,6 +140,19 @@ fn prefer_gpu(cpu_frame_time: Duration, gpu_frame_time: Duration) -> bool {
     gpu_frame_time < cpu_frame_time
 }
 
+// Explicit --gpu fails cleanly; automatic mode logs once and drops the GPU
+// backend. Callers restore the terminal before reporting a fatal error.
+fn handle_gpu_error(forced: bool, error: String) -> std::io::Result<()> {
+    if forced {
+        Err(std::io::Error::other(format!(
+            "GPU rendering failed: {error}"
+        )))
+    } else {
+        log::warn!("GPU rendering failed: {error}; using CPU renderer");
+        Ok(())
+    }
+}
+
 fn main() {
     env_logger::init();
     let args = Args::parse();
@@ -122,6 +170,23 @@ fn main() {
         mesh.vertices.len(),
         mesh.indices.len()
     );
+
+    if let Some((width, height)) = args.frame {
+        let mut framebuffer = Framebuffer::new(width, height);
+        let azimuth = AZ_SPEED * args.time;
+        let altitude = 0.125 * std::f32::consts::PI * (1.0 - (AL_SPEED * args.time).sin());
+        render_frame(
+            &mut framebuffer,
+            &mesh,
+            azimuth,
+            altitude,
+            args.zoom,
+            Vec3::new(1.0, -1.0, 0.0).normalize(),
+            args.fg,
+        );
+        println!("{}", framebuffer_to_string(&framebuffer));
+        return;
+    }
 
     // Initialize GPU (optional)
     let mut gpu_ctx = if args.cpu {
@@ -163,9 +228,22 @@ fn main() {
     }
 
     // Create GPU pipeline if available
-    let mut gpu_pipeline = gpu_ctx
+    let mut gpu_pipeline = match gpu_ctx
         .as_ref()
-        .map(|ctx| RasterPipeline::new(ctx, &mesh, w as u32, h as u32));
+        .map(|ctx| RasterPipeline::new(ctx, &mesh, w as u32, h as u32))
+        .transpose()
+    {
+        Ok(pipeline) => pipeline,
+        Err(error) => {
+            if let Err(error) = handle_gpu_error(args.gpu, error) {
+                drop(display);
+                eprintln!("error: {error}");
+                std::process::exit(1);
+            }
+            gpu_ctx = None;
+            None
+        }
+    };
 
     // In automatic mode, compare the actual model and framebuffer after GPU
     // pipeline creation. This captures triangle count, projected coverage,
@@ -177,10 +255,14 @@ fn main() {
                 render_frame(&mut fb, &mesh, angle, 0.2, zoom, light_dir, fg_color);
                 std::hint::black_box(&fb.chars);
             });
+            let mut benchmark_error = None;
             let gpu_frame_time = benchmark_renderer(|angle| {
-                render_frame_gpu(
-                    &mut fb, pipeline, ctx, angle, 0.2, zoom, light_dir, fg_color,
-                );
+                if benchmark_error.is_none() {
+                    benchmark_error = render_frame_gpu(
+                        &mut fb, pipeline, ctx, angle, 0.2, zoom, light_dir, fg_color,
+                    )
+                    .err();
+                }
                 std::hint::black_box(&fb.chars);
             });
             log::info!(
@@ -188,7 +270,12 @@ fn main() {
                 cpu_frame_time.as_secs_f64() * 1_000.0,
                 gpu_frame_time.as_secs_f64() * 1_000.0,
             );
-            if !prefer_gpu(cpu_frame_time, gpu_frame_time) {
+            let benchmark_failed = benchmark_error.is_some();
+            if let Some(error) = benchmark_error {
+                // This benchmark runs only in automatic mode.
+                log::warn!("GPU benchmark failed: {error}; using CPU renderer");
+            }
+            if benchmark_failed || !prefer_gpu(cpu_frame_time, gpu_frame_time) {
                 gpu_pipeline = None;
                 gpu_ctx = None;
             }
@@ -205,7 +292,6 @@ fn main() {
     let mut last_fps_update = Instant::now();
     let mut frame_count = 0u32;
     let mut current_fps = 0.0f32;
-    let backend_label = if gpu_pipeline.is_some() { "GPU" } else { "CPU" };
 
     let render_error = loop {
         let frame_start = Instant::now();
@@ -255,20 +341,36 @@ fn main() {
         let (w, h) = display.size();
         if w != fb.width || h != fb.height {
             fb.resize(w, h);
-            if let (Some(pipeline), Some(ctx)) = (&mut gpu_pipeline, &gpu_ctx) {
-                pipeline.resize(ctx, w as u32, h as u32);
+            let resize_error = match (&mut gpu_pipeline, &gpu_ctx) {
+                (Some(pipeline), Some(ctx)) => pipeline.resize(ctx, w as u32, h as u32).err(),
+                _ => None,
+            };
+            if let Some(error) = resize_error {
+                if let Err(error) = handle_gpu_error(args.gpu, error) {
+                    break Some(error);
+                }
+                gpu_pipeline = None;
+                gpu_ctx = None;
             }
         }
 
         // Render
         if let (Some(pipeline), Some(ctx)) = (&gpu_pipeline, &gpu_ctx) {
-            render_frame_gpu(
+            if let Err(error) = render_frame_gpu(
                 &mut fb, pipeline, ctx, azimuth, altitude, zoom, light_dir, fg_color,
-            );
-        } else {
+            ) {
+                if let Err(error) = handle_gpu_error(args.gpu, error) {
+                    break Some(error);
+                }
+                gpu_pipeline = None;
+                gpu_ctx = None;
+            }
+        }
+        if gpu_pipeline.is_none() {
             render_frame(&mut fb, &mesh, azimuth, altitude, zoom, light_dir, fg_color);
         }
 
+        let backend_label = if gpu_pipeline.is_some() { "GPU" } else { "CPU" };
         let fps_label = if current_fps > 0.0 {
             Some(format!("{:.0} FPS [{}]", current_fps, backend_label))
         } else {
@@ -289,7 +391,7 @@ fn main() {
     // Restore the terminal before printing an error to the normal screen.
     drop(display);
     if let Some(e) = render_error {
-        eprintln!("error: failed to render terminal frame: {e}");
+        eprintln!("error: rendering failed: {e}");
         std::process::exit(1);
     }
 }
@@ -297,6 +399,13 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gpu_failure_policy_preserves_explicit_backend_choice() {
+        assert!(handle_gpu_error(false, "device lost".into()).is_ok());
+        let error = handle_gpu_error(true, "device lost".into()).unwrap_err();
+        assert!(error.to_string().contains("device lost"));
+    }
 
     #[test]
     fn parses_six_hex_digits() {
@@ -354,5 +463,20 @@ mod tests {
             Duration::from_millis(1),
             Duration::from_millis(1)
         ));
+    }
+
+    #[test]
+    fn frame_size_is_bounded_and_well_formed() {
+        assert_eq!(parse_frame_size("8x10").unwrap(), (8, 10));
+        assert!(parse_frame_size("0x10").is_err());
+        assert!(parse_frame_size("8").is_err());
+        assert!(parse_frame_size("999x10").is_err());
+    }
+
+    #[test]
+    fn frame_time_must_be_finite_and_non_negative() {
+        assert_eq!(parse_frame_time("3.5").unwrap(), 3.5);
+        assert!(parse_frame_time("-1").is_err());
+        assert!(parse_frame_time("NaN").is_err());
     }
 }
