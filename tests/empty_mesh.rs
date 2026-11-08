@@ -40,9 +40,9 @@ fn gpu_builds_and_renders_empty_mesh_without_crashing() {
         return;
     };
     // Constructing the pipeline used to panic here on a zero-sized buffer.
-    let pipeline = RasterPipeline::new(&ctx, &empty_mesh(), W as u32, H as u32);
+    let pipeline = RasterPipeline::new(&ctx, &empty_mesh(), W as u32, H as u32).unwrap();
     let mut fb = Framebuffer::new(W, H);
-    render_frame_gpu(&mut fb, &pipeline, &ctx, 0.0, 0.0, 1.0, LIGHT_DIR, None);
+    render_frame_gpu(&mut fb, &pipeline, &ctx, 0.0, 0.0, 1.0, LIGHT_DIR, None).unwrap();
     assert!(
         is_blank(&framebuffer_to_string(&fb)),
         "empty mesh should render blank on the GPU"
@@ -55,7 +55,7 @@ fn gpu_builds_and_renders_empty_mesh_without_crashing() {
         vertices: vec![],
         indices: vec![0, 1, u32::MAX],
     };
-    let invalid_pipeline = RasterPipeline::new(&ctx, &invalid_mesh, W as u32, H as u32);
+    let invalid_pipeline = RasterPipeline::new(&ctx, &invalid_mesh, W as u32, H as u32).unwrap();
     render_frame_gpu(
         &mut fb,
         &invalid_pipeline,
@@ -65,7 +65,8 @@ fn gpu_builds_and_renders_empty_mesh_without_crashing() {
         1.0,
         LIGHT_DIR,
         None,
-    );
+    )
+    .unwrap();
     assert!(is_blank(&framebuffer_to_string(&fb)));
 
     // A stale pipeline used to panic while copying a larger GPU surface into a
@@ -81,6 +82,7 @@ fn gpu_builds_and_renders_empty_mesh_without_crashing() {
         1.0,
         LIGHT_DIR,
         None,
-    );
+    )
+    .unwrap_err();
     assert!(is_blank(&framebuffer_to_string(&smaller_fb)));
 }

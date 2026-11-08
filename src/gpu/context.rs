@@ -1,7 +1,13 @@
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+
 use wgpu::{Adapter, Device, Instance, Queue};
 
 /// Holds the wgpu device, queue, and adapter.
 pub struct GpuContext {
+    lost: Arc<AtomicBool>,
     /// The logical GPU device used to create pipelines and buffers.
     pub device: Device,
     /// The command queue for submitting work to the device.
@@ -65,10 +71,72 @@ impl GpuContext {
 
         log::info!("GPU: {}", adapter.get_info().name);
 
+        let lost = Arc::new(AtomicBool::new(false));
+        let callback_lost = Arc::clone(&lost);
+        device.set_device_lost_callback(move |reason, message| {
+            callback_lost.store(true, Ordering::Release);
+            log::debug!("GPU device lost ({reason:?}): {message}");
+        });
         Some(Self {
+            lost,
             device,
             queue,
             adapter,
         })
+    }
+
+    // Scope every fallible GPU operation so validation and allocation failures
+    // reach the caller instead of wgpu's default panic handler. Always pop all
+    // scopes, including when the operation itself returns an error.
+    pub(crate) fn checked<T>(
+        &self,
+        operation: impl FnOnce() -> Result<T, String>,
+    ) -> Result<T, String> {
+        if self.lost.load(Ordering::Acquire) {
+            return Err("GPU device is lost".into());
+        }
+        for filter in [
+            wgpu::ErrorFilter::OutOfMemory,
+            wgpu::ErrorFilter::Internal,
+            wgpu::ErrorFilter::Validation,
+        ] {
+            self.device.push_error_scope(filter);
+        }
+        let mut result = operation();
+        for _ in 0..3 {
+            if let Some(error) = pollster::block_on(self.device.pop_error_scope()) {
+                result = Err(format!("GPU operation failed: {error}"));
+            }
+        }
+        if self.lost.load(Ordering::Acquire) {
+            return Err("GPU device is lost".into());
+        }
+        result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validation_errors_are_scoped_and_do_not_poison_later_operations() {
+        let Some(ctx) = pollster::block_on(GpuContext::new()) else {
+            eprintln!("Skipping GPU error scopes: no suitable adapter");
+            return;
+        };
+        let result = ctx.checked(|| {
+            let _buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("deliberately invalid buffer"),
+                size: ctx.device.limits().max_buffer_size + 1,
+                usage: wgpu::BufferUsages::STORAGE,
+                mapped_at_creation: false,
+            });
+            Ok(())
+        });
+        assert!(result.is_err());
+        let result: Result<(), String> = ctx.checked(|| Err("caller error".into()));
+        assert_eq!(result.unwrap_err(), "caller error");
+        assert_eq!(ctx.checked(|| Ok(42)).unwrap(), 42);
     }
 }

@@ -1,6 +1,6 @@
 //! # a3d
 //!
-//! A GPU-accelerated ASCII 3D rendering engine: it loads OBJ/STL meshes and
+//! A GPU-accelerated ASCII 3D rendering engine: it loads OBJ/STL/GLB meshes and
 //! rasterizes them to ASCII art, either on the GPU (a wgpu compute pipeline) or
 //! on an equivalent CPU scanline rasterizer.
 //!
@@ -22,14 +22,19 @@
 //! print!("{}", framebuffer_to_string(&fb));
 //! ```
 //!
-//! For GPU rendering see [`GpuContext`] and [`render_frame_gpu`]; the GPU and CPU
-//! paths are kept byte-for-byte identical (asserted by `tests/gpu_compare.rs`).
+//! For GPU rendering see [`GpuContext`] and [`render_frame_gpu`]. Both backends
+//! implement the same flat-shaded orthographic renderer, but floating-point
+//! rounding and GPU depth quantization can differ. Scene regression tests allow
+//! 0.5% differing ASCII cells (1% for the zoom sweep); synthetic fixtures also
+//! compare colors and luminances with a tolerance of 1e-5.
+//! GPU rendering does not read back depth: [`Framebuffer::depth`] stays at
+//! infinity, so CPU depth compositing must start with a CPU-rendered frame.
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
 /// GPU compute rasterizer: wgpu device setup and the 3-pass pipeline.
 pub mod gpu;
-/// Mesh types and OBJ/STL loading.
+/// Mesh types and OBJ/STL/GLB loading.
 pub mod model;
 /// CPU framebuffer, ASCII luminance mapping, and camera.
 pub mod render;
@@ -155,6 +160,11 @@ pub fn render_frame(
 }
 
 /// Render a single frame using the GPU compute pipeline.
+///
+/// Returns an error for invalid inputs, a size mismatch, or GPU failure. On
+/// error the framebuffer is cleared; callers may render the same frame on CPU.
+/// On success characters, colors, and luminances are populated. Depth remains
+/// infinity: GPU depth is internal and is not available for CPU compositing.
 // Mirrors `render_frame`'s parameter set; a `RenderParams` struct is tracked as
 // follow-up cleanup (see issue #3).
 #[allow(clippy::too_many_arguments)]
@@ -167,32 +177,25 @@ pub fn render_frame_gpu(
     zoom: f32,
     light_dir: Vec3,
     fg_override: Option<[f32; 3]>,
-) {
+) -> Result<(), String> {
     let w = fb.width;
     let h = fb.height;
 
     fb.clear();
     if !render_inputs_are_finite(azimuth, altitude, zoom, light_dir, fg_override) {
-        return;
+        return Err("GPU render inputs must be finite".into());
     }
-    let Ok(w_u32) = u32::try_from(w) else {
-        log::error!("framebuffer width {w} exceeds the GPU renderer's u32 limit");
-        return;
-    };
-    let Ok(h_u32) = u32::try_from(h) else {
-        log::error!("framebuffer height {h} exceeds the GPU renderer's u32 limit");
-        return;
-    };
+    let w_u32 = u32::try_from(w).map_err(|_| "framebuffer width exceeds the GPU u32 limit")?;
+    let h_u32 = u32::try_from(h).map_err(|_| "framebuffer height exceeds the GPU u32 limit")?;
     if w == 0 || h == 0 {
-        return;
+        return Ok(());
     }
     if pipeline.dimensions() != (w_u32, h_u32) {
-        log::error!(
+        return Err(format!(
             "GPU pipeline is {}x{} but framebuffer is {w}x{h}; call RasterPipeline::resize first",
             pipeline.dimensions().0,
             pipeline.dimensions().1,
-        );
-        return;
+        ));
     }
 
     let logical_h: f32 = 1.0;
@@ -219,7 +222,7 @@ pub fn render_frame_gpu(
         _pad1: 0.0,
     };
 
-    pipeline.render(ctx, fb, &uniforms);
+    pipeline.render(ctx, fb, &uniforms)
 }
 
 /// Convert framebuffer to a string of ASCII art (rows separated by newlines).

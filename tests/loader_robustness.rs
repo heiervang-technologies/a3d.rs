@@ -1,7 +1,7 @@
-//! The loader parses untrusted OBJ/STL files (see `SECURITY.md`), so it must
+//! The loader parses untrusted OBJ/STL/GLB files (see `SECURITY.md`), so it must
 //! surface bad input as an error and never panic, hang, or allocate unboundedly.
 //! This throws a spread of adversarial byte sequences at `load_model` through
-//! both extensions and asserts only that it returns (Ok or Err — both fine).
+//! every extension and asserts only that it returns (Ok or Err — both fine).
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -52,7 +52,7 @@ fn adversarial_cases() -> Vec<Vec<u8>> {
 #[test]
 fn loader_never_panics_on_adversarial_input() {
     for (i, bytes) in adversarial_cases().into_iter().enumerate() {
-        for ext in ["stl", "obj"] {
+        for ext in ["stl", "obj", "glb"] {
             let path = write_temp(&format!("a3d_robustness_{i}.{ext}"), &bytes);
             // The contract is "returns, never panics" — Ok and Err both pass.
             let _ = load_model(&path);

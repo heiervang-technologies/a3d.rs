@@ -36,15 +36,16 @@ fn compare_at_size(
     let cpu_str = framebuffer_to_string(&cpu_fb);
 
     let ctx = pollster::block_on(GpuContext::new())?;
-    let pipeline = RasterPipeline::new(&ctx, &mesh, width as u32, height as u32);
+    let pipeline = RasterPipeline::new(&ctx, &mesh, width as u32, height as u32).unwrap();
     let mut gpu_fb = Framebuffer::new(width, height);
-    render_frame_gpu(&mut gpu_fb, &pipeline, &ctx, az, al, zoom, LIGHT_DIR, None);
+    render_frame_gpu(&mut gpu_fb, &pipeline, &ctx, az, al, zoom, LIGHT_DIR, None).unwrap();
     let gpu_str = framebuffer_to_string(&gpu_fb);
 
-    let total = cpu_str.chars().count();
-    let diffs = cpu_str
-        .chars()
-        .zip(gpu_str.chars())
+    let total = cpu_fb.chars.len();
+    let diffs = cpu_fb
+        .chars
+        .iter()
+        .zip(&gpu_fb.chars)
         .filter(|(c, g)| c != g)
         .count();
     Some((cpu_str, gpu_str, diffs as f64 / total as f64))
@@ -79,12 +80,9 @@ fn gpu_vs_cpu_dog() {
     println!("=== CPU ===\n{cpu_str}\n\n=== GPU ===\n{gpu_str}");
     println!("diff ratio: {:.2}%", ratio * 100.0);
 
-    // The GPU resolves depth with a single atomicMin over packed
-    // (depth << 32 | triangle_index), and the shade pass colors a pixel only if
-    // its triangle was the recorded winner — no float recompute, no tie holes —
-    // so the GPU matches the CPU rasterizer pixel-for-pixel (observed 0.00% on
-    // dog.stl). The small tolerance only absorbs rare cross-driver float rounding
-    // at ASCII luminance-bucket boundaries.
+    // Packed depth/index ownership avoids float-equality holes. The observed
+    // sample output often matches exactly, but this is a tolerance check:
+    // cross-driver rounding and quantization are not guaranteed identical.
     assert!(
         cpu_str.chars().any(|c| c != ' ' && c != '\n'),
         "CPU render is blank — test fixture is broken"
@@ -103,10 +101,8 @@ fn gpu_vs_cpu_dog() {
 /// across zoom — so a reintroduction of that bug, which blows the depth buffer
 /// out of range at high zoom, trips this ceiling.
 ///
-/// With depth resolved by the single-pass atomicMin packing, GPU and CPU agree
-/// exactly here (observed 0.00% at every zoom); the 1% ceiling leaves only a
-/// little headroom for cross-driver float rounding while still catching a
-/// depth-vs-zoom regression, which spikes divergence well past it.
+/// The 1% ceiling allows small cross-driver differences while still catching
+/// the much larger divergence caused by scaling depth with zoom.
 #[test]
 fn gpu_vs_cpu_zoom_sweep() {
     let mut ran = false;
@@ -127,4 +123,65 @@ fn gpu_vs_cpu_zoom_sweep() {
         }
     }
     assert!(ran, "zoom sweep ran no cases");
+}
+
+/// Synthetic overlapping colored triangles exercise occlusion, flat vertex
+/// colors, foreground overrides, and the documented depth-readback boundary.
+#[test]
+fn colored_occlusion_matches_cpu_contract() {
+    use a3d::model::{Mesh, mesh::Vertex};
+    let Some(ctx) = pollster::block_on(GpuContext::new()) else {
+        eprintln!("Skipping colored occlusion: no suitable adapter");
+        return;
+    };
+    let mut mesh = Mesh {
+        vertices: Vec::new(),
+        indices: Vec::new(),
+    };
+    for (depth, color) in [(0.4, [1.0, 0.1, 0.2]), (-0.4, [0.2, 0.6, 0.9])] {
+        let base = mesh.vertices.len() as u32;
+        for (index, position) in [[-0.6, -0.6, depth], [0.0, 0.6, depth], [0.6, -0.6, depth]]
+            .into_iter()
+            .enumerate()
+        {
+            mesh.vertices.push(Vertex {
+                position,
+                normal: [0.0; 3],
+                color: if index == 0 { color } else { [0.0, 1.0, 0.0] },
+            });
+        }
+        mesh.indices.extend([base, base + 1, base + 2]);
+    }
+    let pipeline = RasterPipeline::new(&ctx, &mesh, 80, 24).unwrap();
+    for override_color in [None, Some([0.9, 0.4, 0.1])] {
+        for light in [Vec3::Z, Vec3::new(0.0, 1.0, 1.0).normalize()] {
+            let mut cpu = Framebuffer::new(80, 24);
+            let mut gpu = Framebuffer::new(80, 24);
+            render_frame(&mut cpu, &mesh, 0.0, 0.0, 1.0, light, override_color);
+            render_frame_gpu(
+                &mut gpu,
+                &pipeline,
+                &ctx,
+                0.0,
+                0.0,
+                1.0,
+                light,
+                override_color,
+            )
+            .unwrap();
+            assert_eq!(cpu.chars, gpu.chars);
+            assert!(cpu.chars.iter().any(|&ch| ch != ' '));
+            for i in 0..cpu.chars.len() {
+                assert!((cpu.luminances[i] - gpu.luminances[i]).abs() <= 1e-5);
+                for channel in 0..3 {
+                    assert!((cpu.colors[i][channel] - gpu.colors[i][channel]).abs() <= 1e-5);
+                }
+                if cpu.chars[i] != ' ' {
+                    assert_eq!(cpu.colors[i], override_color.unwrap_or([0.2, 0.6, 0.9]));
+                    assert!(cpu.depth[i].is_finite());
+                }
+            }
+            assert!(gpu.depth.iter().all(|&depth| depth == f32::INFINITY));
+        }
+    }
 }
