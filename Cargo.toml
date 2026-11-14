@@ -15,7 +15,7 @@ exclude = ["assets/", ".github/", "CLAUDE.md", "Makefile"]
 
 [dependencies]
 wgpu = "26"
-glam = "0.33"
+glam = "0.34"
 crossterm = "0.29"
 tobj = "4"
 clap = { version = "4", features = ["derive"] }
